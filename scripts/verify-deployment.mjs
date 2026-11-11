@@ -101,14 +101,18 @@ async function checkPortal(name, baseUrl, entryPath) {
     return;
   }
 
+  const hasVercelAuthWall =
+    page.text.includes('<title>Login – Vercel</title>') ||
+    page.text.includes('<title>Login &#8211; Vercel</title>') ||
+    page.text.includes('Authentication Required');
   const hasAppError =
     page.text.includes('Application error: a server-side exception has occurred') ||
     page.text.includes('__next_error__');
-  const ssrPass = page.status === 200 && page.text.length > 200 && !hasAppError;
+  const ssrPass = page.status === 200 && page.text.length > 200 && !hasAppError && !hasVercelAuthWall;
   record(
     `${name}: SSR ${entryPath}`,
     ssrPass,
-    `HTTP ${page.status}, ${page.text.length} bytes${hasAppError ? ', Next error marker found' : ''}`,
+    `HTTP ${page.status}, ${page.text.length} bytes${hasAppError ? ', Next error marker found' : ''}${hasVercelAuthWall ? ', Vercel SSO wall detected (not app SSR)' : ''}`,
   );
 
   if (SKIP_PROXY) {

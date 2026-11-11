@@ -15,14 +15,23 @@ import (
 	"time"
 )
 
+func clearProcessedMap() {
+	processed.Range(func(k, _ interface{}) bool {
+		processed.Delete(k)
+		return true
+	})
+}
+
 func setupTest() {
-	processed = sync.Map{}
+	deliveryWG.Wait()
+	clearProcessedMap()
 	redisClient = nil
 	dbPool = nil
 	webhookAuthToken = "test-token"
 	webhookURLValidator = validateWebhookURL
 	urlLookupIP = net.LookupIP
 	webhookDialContext = safeDialContext
+	dispatchWebhookHook = dispatchWebhook
 }
 
 func setupLocalServerTest() {
@@ -259,8 +268,14 @@ func TestHealthEndpoint(t *testing.T) {
 
 func TestDeliverEndpoint_SSRFAndAuth(t *testing.T) {
 	setupTest()
+	defer setupTest()
+
 	urlLookupIP = func(host string) ([]net.IP, error) {
 		return []net.IP{net.ParseIP("93.184.216.34")}, nil
+	}
+	var queued []DeliveryRequest
+	dispatchWebhookHook = func(req DeliveryRequest) {
+		queued = append(queued, req)
 	}
 	mux := setupRoutes()
 
@@ -278,6 +293,9 @@ func TestDeliverEndpoint_SSRFAndAuth(t *testing.T) {
 	mux.ServeHTTP(wSsrf, ssrfReq)
 	if wSsrf.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 on SSRF URL, got %d", wSsrf.Code)
+	}
+	if len(queued) != 0 {
+		t.Fatalf("expected rejected SSRF request not to be enqueued, got %d", len(queued))
 	}
 
 	safeBody := DeliveryRequest{
@@ -300,6 +318,38 @@ func TestDeliverEndpoint_SSRFAndAuth(t *testing.T) {
 	_ = json.Unmarshal(wSafe.Body.Bytes(), &resp)
 	if resp["ok"] != true {
 		t.Fatalf("expected ok: true")
+	}
+	if len(queued) != 1 || queued[0].Url != "https://webhooks.example.com/orders" {
+		t.Fatalf("expected 1 queued delivery for safe URL, got %+v", queued)
+	}
+}
+
+func TestDispatchWebhook_WaitGroupSynchronized(t *testing.T) {
+	setupLocalServerTest()
+	defer setupTest()
+
+	var hit int
+	var mu sync.Mutex
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		hit++
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	enqueueWebhook(DeliveryRequest{
+		Id:    "async-wg-1",
+		Url:   srv.URL,
+		Event: "order.created",
+		Body:  map[string]interface{}{"ok": true},
+	})
+	deliveryWG.Wait()
+
+	mu.Lock()
+	defer mu.Unlock()
+	if hit != 1 {
+		t.Fatalf("expected async delivery to complete once before WaitGroup returns, got %d", hit)
 	}
 }
 

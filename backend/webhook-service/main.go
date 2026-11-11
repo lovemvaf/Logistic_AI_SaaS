@@ -39,7 +39,21 @@ var (
 	urlLookupIP         = net.LookupIP
 	webhookURLValidator = validateWebhookURL
 	webhookDialContext  = safeDialContext
+	deliveryWG          sync.WaitGroup
+	dispatchWebhookHook func(DeliveryRequest)
 )
+
+func init() {
+	dispatchWebhookHook = dispatchWebhook
+}
+
+func dispatchWebhook(req DeliveryRequest) {
+	deliveryWG.Add(1)
+	go func() {
+		defer deliveryWG.Done()
+		deliverWebhook(req)
+	}()
+}
 
 const (
 	webhookStreamKey    = "webhook:stream"
@@ -703,12 +717,12 @@ func enqueueWebhook(req DeliveryRequest) {
 		}).Err()
 		if err != nil {
 			log.Printf("Redis Stream queue error, falling back to direct delivery: %v", err)
-			go deliverWebhook(req)
+			dispatchWebhookHook(req)
 			return
 		}
 		log.Printf("Webhook %s queued in Redis Stream", req.DeliveryId)
 	} else {
-		go deliverWebhook(req)
+		dispatchWebhookHook(req)
 	}
 }
 
