@@ -159,7 +159,9 @@ jobs:
           import json, subprocess, sys
           def emit_lines(text):
               lines = [l.strip() for l in text.splitlines() if l.strip()]
-              for l in lines[-8:]:
+              key = [l for l in lines if any(k in l for k in ("FAILED", "panicked", "assertion", "error:", "error["))]
+              picked = (key or lines)[-8:]
+              for l in picked:
                   safe = l.replace("%", "%25").replace("\r", "").replace("\n", " ")
                   print(f"::error::{safe}")
           p = subprocess.run(

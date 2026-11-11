@@ -587,6 +587,7 @@ export type ReportParams = {
   period?: string;
   from?: string;
   to?: string;
+  groupBy?: ReportOnTime['groupBy'];
 };
 
 // ---------------------------------------------------------------------------

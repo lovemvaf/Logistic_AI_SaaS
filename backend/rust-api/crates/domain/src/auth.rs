@@ -133,8 +133,11 @@ impl Claims {
         if self.permissions.iter().any(|value| value == "*") {
             return true;
         }
-        if self.permissions.iter().any(|value| value == permission.as_str()) {
-            return true;
+        if !self.permissions.is_empty() {
+            return self
+                .permissions
+                .iter()
+                .any(|value| value == permission.as_str());
         }
         Role::from_claim(&self.role)
             .map(|role| {
