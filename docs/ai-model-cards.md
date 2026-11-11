@@ -31,7 +31,7 @@ Tài liệu công bố trung thực thuật toán, dữ liệu đầu vào, cơ 
 - **Giới hạn đã biết**:
   - Không tính đường một chiều, cấm tải theo khung giờ cao điểm (TP.HCM/Hà Nội), giao thông thực tế hay khung giờ giao hẹn (VRPTW).
   - Tham lam + `2-opt` là heuristic; khi một số điểm rơi vào `unassigned` (`NO_AVAILABLE_VEHICLES`, `EXCEEDS_MAX_VEHICLE_CAPACITY`, `INSUFFICIENT_FLEET_CAPACITY`), điều đó phản ánh lời giải tham lam không gán hết chứ chưa chứng minh vô nghiệm theo nghĩa tối ưu tổ hợp chính xác (MILP).
-- **Kiểm thử hiện có**: `workers/ai-worker/tests/vrp.test.ts` (`needs_ci_run`).
+- **Kiểm thử hiện có**: `workers/ai-worker/tests/vrp.test.ts` (**PASSED** trong GitHub Actions CI Run `43023689371` / job `ai-worker`; đối chiếu chất lượng tuyến thực tế với OR-Tools vẫn `[CHƯA ĐO PILOT]`).
 
 ### Card 2 — Trợ lý LLM & Dự báo/Phân tích Fallback (`compute.ts`, `llm.ts`)
 - **Mô hình LLM cấu hình**: Mặc định `@cf/meta/llama-3.1-8b-instruct-fast` qua Cloudflare Workers `AI` binding (hoặc `CLOUDFLARE_MODEL`, dự phòng `OPENAI_API_KEY` dùng `gpt-4o-mini`), đệm KV `6` phút.

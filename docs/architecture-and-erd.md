@@ -1,6 +1,6 @@
 # Kiến trúc Hệ thống & Lược đồ Dữ liệu (As-Is Architecture & ERD)
 
-Tài liệu này mô tả kiến trúc thực tế (As-Is) của SmartLogi AI SaaS sau quá trình hợp nhất modular monolith và gia cố các cổng kiểm soát `G0–G4` (trên nền snapshot commit `775ba1ce181191054397cb62bb7430530ce33f81`).
+Tài liệu này mô tả kiến trúc thực tế (As-Is) của SmartLogi AI SaaS sau quá trình hợp nhất modular monolith và gia cố các cổng kiểm soát `G0–G5` (trên nền snapshot baseline `775ba1ce181191054397cb62bb7430530ce33f81`, xác minh CI 6/6 jobs PASSED ở commit `75cf1ea` / Run `43023689371`).
 
 ---
 

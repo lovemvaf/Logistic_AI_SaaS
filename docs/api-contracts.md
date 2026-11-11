@@ -5,7 +5,7 @@ Tài liệu đối chiếu trực tiếp toàn bộ endpoint từ:
 - **70 controller files (407 endpoint decorators)** trong `backend/core-api/src/modules/`
 - Go `gps-ingestion-service`, Go `webhook-service`, Cloudflare `workers/ai-worker` và cảnh báo về `backend/rust-api`.
 
-> **Lưu ý kiểm chứng**: Mọi đường dẫn dưới đây đã được quét trực tiếp từ mã nguồn decorator/router và đối soát tĩnh bởi [`scripts/static-verify.py`](../scripts/static-verify.py). Mức kiểm thử chạy thực tế với PostgreSQL/HTTP là **`needs_ci_run`** do ràng buộc `AGENTS.md §1`.
+> **Lưu ý kiểm chứng**: Mọi đường dẫn dưới đây đã được quét trực tiếp từ mã nguồn decorator/router và đối soát tĩnh bởi [`scripts/static-verify.py`](../scripts/static-verify.py). Toàn bộ suite build, typecheck (`tsc --noEmit`), parity `api-gateway`, AI Worker, Go `-race`, Rust workspace và PostgreSQL RLS đã **PASSED** trên GitHub Actions ([Run 43023689371](https://github.com/lovemvaf/Logistic_AI_SaaS/actions/runs/43023689371), commit `75cf1ea`); kiểm thử E2E HTTP xuyên container live hiện vẫn chờ môi trường staging.
 
 ---
 

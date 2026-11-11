@@ -4,9 +4,9 @@
 > **Bản superseded (chốt ngày 06/09/2026 — Đã bị thay thế bởi kết quả kiểm toán mã nguồn 11/11/2026).**
 > Các con số phần trăm tổng hợp như `89.7%`, `95%` (GPS "Sẵn sàng Production"), `92%` (WMS), `85%` (OR-Tools VRPTW) hay nhận định "Sẵn sàng Vận hành Thử nghiệm (Staging / Pilot)" trong tài liệu cũ này **không có rubric đo đạc và không có log kiểm thử kèm theo**.
 >
-> Trạng thái đúng sự thật của từng tính năng và kết quả rà soát được duy trì theo hệ nhãn chuẩn hóa (`implemented`, `partial`, `mock`, `demo-only`, `needs_ci_run`) tại:
+> Trạng thái đúng sự thật của từng tính năng và kết quả rà soát được duy trì theo hệ nhãn chuẩn hóa (`implemented`, `partial`, `mock`, `demo-only`, `ci-verified`) tại:
 > - Bảng truy vết chi tiết từng yêu cầu/lỗi: [upgrade/coverage.csv](upgrade/coverage.csv)
-> - Nhật ký xác minh tĩnh & lệnh CI chờ chạy (`needs_ci_run` theo `AGENTS.md §1`): [upgrade/verification.md](upgrade/verification.md)
+> - Nhật ký xác minh tĩnh (`8/8`) & CI GitHub Actions đạt 6/6 jobs ([Run 43023689371](https://github.com/lovemvaf/Logistic_AI_SaaS/actions/runs/43023689371), commit `75cf1ea`; vẫn tách riêng phần staging live/Pilot chưa chạy): [upgrade/verification.md](upgrade/verification.md)
 > - Hồ sơ đính chính B3–B4 (Bảng 8–9, 10, 11): [ho-so-cap-nhat-B3-B4.md](ho-so-cap-nhat-B3-B4.md)
 
 ---

@@ -2,7 +2,9 @@
 
 Nền tảng quản trị kho bãi (WMS), vận tải (TMS), trạm đóng gói hỗ trợ Web Serial / MobileNet và thu nhận GPS thời gian thực dành cho doanh nghiệp logistics SME đa khách thuê.
 
-> **Lưu ý kiểm chứng**: Bộ kiểm tra tĩnh ([`scripts/static-verify.py`](scripts/static-verify.py)) đã chạy đạt **8/8 nhóm kiểm tra (0 lỗi)**. Các lệnh biên dịch và bộ test runtime (Node/Jest, AI Worker, Go `-race`, Rust `cargo test`, PostgreSQL `FORCE RLS`) được cấu hình trong [`.github/workflows/ci.yml`](.github/workflows/ci.yml) với trạng thái `needs_ci_run` chờ thực thi trên GitHub Actions hoặc môi trường Docker/Node.
+[![SmartLogi CI](https://github.com/lovemvaf/Logistic_AI_SaaS/actions/workflows/ci.yml/badge.svg)](https://github.com/lovemvaf/Logistic_AI_SaaS/actions/workflows/ci.yml)
+
+> **Lưu ý kiểm chứng**: Bộ kiểm tra tĩnh ([`scripts/static-verify.py`](scripts/static-verify.py)) đã chạy đạt **8/8 nhóm kiểm tra (0 lỗi)**. Toàn bộ **6/6 jobs** trong [`.github/workflows/ci.yml`](.github/workflows/ci.yml) (`static-verify`, `node-workspace`, `ai-worker`, `go-services`, `rust-api`, `postgres-rls`) đã chạy và **PASSED** trên GitHub Actions (Run [`43023689371`](https://github.com/lovemvaf/Logistic_AI_SaaS/actions/runs/43023689371), commit mã nguồn `75cf1ea`). Triển khai staging đa container trực tiếp, `next build`, cấu hình bí mật/cloud thật, thiết bị Web Serial/camera và các chỉ số Pilot 12 tuần vẫn giữ nguyên trạng thái chưa đo (`[CHƯA ĐO PILOT]`).
 
 ---
 

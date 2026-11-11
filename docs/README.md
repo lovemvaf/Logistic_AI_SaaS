@@ -2,7 +2,7 @@
 
 Tài liệu trung tâm cho mã nguồn SmartLogi AI SaaS (WMS/TMS/Edge Vision/GPS). Các tài liệu trong thư mục `docs/` đã được đối chiếu trực tiếp với mã nguồn thực tế trên snapshot sau rà soát (baseline commit `775ba1ce181191054397cb62bb7430530ce33f81`, các đợt gia cố `G0–G4`).
 
-> **Trạng thái kiểm chứng môi trường (`AGENTS.md §1`)**: Máy phát triển cục bộ chỉ chạy bộ kiểm tra tĩnh bằng Python ([scripts/static-verify.py](../scripts/static-verify.py)). Mọi lệnh build/test cần runtime Node.js, pnpm, Go, Rust hoặc PostgreSQL/PostGIS đều được đóng gói trong CI ([.github/workflows/ci.yml](../.github/workflows/ci.yml)) với trạng thái **`needs_ci_run`** cho tới khi chạy trên GitHub Actions hoặc môi trường staging có cấp phép.
+> **Trạng thái kiểm chứng môi trường (`AGENTS.md §1`)**: Máy phát triển Windows cục bộ chỉ chạy bộ kiểm tra tĩnh bằng Python ([scripts/static-verify.py](../scripts/static-verify.py), **8/8 PASS**). Toàn bộ 6/6 jobs build, unit test, typecheck, Go `-race`, Rust workspace và PostgreSQL `FORCE RLS` trong [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) đã thực thi và **PASSED** trên GitHub Actions tại [Run 43023689371](https://github.com/lovemvaf/Logistic_AI_SaaS/actions/runs/43023689371) (commit `75cf1ea`). Kiểm thử tích hợp đa container live (`staging`), `next build`, thiết bị phần cứng thật và Pilot 12 tuần vẫn chờ bước triển khai thực địa.
 
 ---
 
@@ -38,7 +38,7 @@ Hệ thống vận hành theo mô hình **Modular Monolith kết hợp các dị
 | [role-guides.md](role-guides.md) | Hướng dẫn vận hành và ma trận quyền least-privilege cho `SUPER_ADMIN`, 7 role tenant/client và luồng Public Tracking |
 | [ho-so-cap-nhat-B3-B4.md](ho-so-cap-nhat-B3-B4.md) | Hồ sơ đính chính & đồng bộ B3 (`B3-01..07`) và B4 (`Ch.1–21`, `FIG-01..23`, `TBL-01..11`, `REF-01..09`), giữ nguyên bản gốc 22/06/2026 |
 | [upgrade/coverage.csv](upgrade/coverage.csv) | Ma trận truy vết từng ID (`P01–P15`, `N01–N52`, `R01–R24`, `NEW-01–10`, B3/B4/Hình/Bảng/Tham khảo) |
-| [upgrade/verification.md](upgrade/verification.md) | Nhật ký chạy thực tế `scripts/static-verify.py` và danh sách lệnh CI đang chờ chạy (`needs_ci_run`) |
+| [upgrade/verification.md](upgrade/verification.md) | Nhật ký chạy `scripts/static-verify.py` (8/8 PASS) và kết quả CI GitHub Actions Run `43023689371` đạt 6/6 jobs (commit `75cf1ea`) |
 | [upgrade/handoff.md](upgrade/handoff.md) | Tổng kết bàn giao các cổng `G0–G5`, giới hạn còn tồn tại và điều kiện chạy pilot |
 
 ### Tài liệu Lịch sử (Đã được thay thế bởi các tài liệu trên)

@@ -2,7 +2,9 @@
 
 **Timestamp**: 2026-11-11  
 **Baseline Commit**: `775ba1ce181191054397cb62bb7430530ce33f81`  
-**Current Gate**: `G5` Complete (Static Verification Passed `0` Errors; CI Runtime Jobs Queued as `needs_ci_run`)
+**Verified Code Commit (`CI 6/6 PASSED`)**: `75cf1ea` (GitHub Actions Run [`43023689371`](https://github.com/lovemvaf/Logistic_AI_SaaS/actions/runs/43023689371))  
+**Repository**: [`https://github.com/lovemvaf/Logistic_AI_SaaS`](https://github.com/lovemvaf/Logistic_AI_SaaS) (`Public`, branch `main`)  
+**Current Gate**: `G5` Complete — Static Verification (`8/8`, `0` Errors) & GitHub Actions CI (`6/6` Jobs PASSED)
 
 ---
 
@@ -16,22 +18,23 @@
 - **Gate `G2` — Contract Parity & `mock | api` Mode Separation**:
   - Aligned `api/api-gateway/src/config/services.config.ts`, Core API portal alias controllers (`iam-portal-aliases`, `orders-portal-aliases`, `logistics-portal-aliases`, `wms-portal-aliases`, `client-portal`), and portal adapters (fixed Axios GET `params` vs `data`, `crud().list()` filtering, `customer-portal` `recordPayment(id, amount)`).
   - Enforced strict `NEXT_PUBLIC_DATA_SOURCE=mock|api` separation inside `frontend/feature-test/admin-portal` (removed silent `local-store` error fallback, disabled role-switch in `api` mode, fixed audit-logs double pagination slice & CSV injection, fixed tenant search/pagination Next cap).
+  - Resolved downstream strict TypeScript & Next.js `typegen` mismatches across `tenant-portal`, `customer-portal`, `pack-station-web`, `driver-app`, and `rust-api` in commits through `75cf1ea` without modifying frozen packages or lockfiles.
 - **Gate `G3` — Grounded AI, Pack Vision & Honest Capabilities**:
   - Connected real `mobilenet.classify(videoRef.current, 5)` inside `frontend/reporting/pack-station-web/src/app/pack/page.tsx` with `CV_CONFIDENCE_THRESHOLD = 0.6` (`cv-mapper.ts`) + human barcode confirmation, fixed `store.ts` confidence index bug, and disclosed ImageNet vs custom SKU scope.
   - Fixed `workers/ai-worker` LLM model typo (`@cf/meta/llama-3.1-8b-instruct-fast`), added prompt-injection `wrapUntrustedData` delimiters, replaced `POST /v1/train/:type` `200 queued` stub with HTTP `501 TRAINING_NOT_IMPLEMENTED` + `/v1/training-dataset` export (`human_corrected IS NOT NULL`), removed `0.86` accuracy seed & UI `+0.02` bump, exposed `data_sufficiency` / `evaluation_status: "unmeasured"`, and disclosed `backend/rust-api` as experimental parity scaffold.
 - **Gate `G4` — Tests, CI & Traceability Documentation**:
-  - Created/expanded `15` automated test suites across Jest, `tsx`, Go `testing`, and PostgreSQL SQL (`needs_ci_run`).
+  - Created/expanded `15` automated test suites across Jest, `tsx`, Go `testing`, and PostgreSQL SQL — all verified **PASSED** on GitHub Actions CI Run [`43023689371`](https://github.com/lovemvaf/Logistic_AI_SaaS/actions/runs/43023689371).
   - Authored `.github/workflows/ci.yml` (`6` CI jobs) and `scripts/static-verify.py` (`8` check groups).
   - Updated root docs (`docs/README.md`, `docs/Chi_Tiet_Kien_Truc_Va_Chuc_Nang.md`, `docs/Tien_Do_Va_Do_Hoan_Thien_Chi_Tiet.md` preserving 06/09/2026 history cleanly) and created `docs/architecture-and-erd.md`, `docs/api-contracts.md`, `docs/operations-runbook.md`, `docs/ai-model-cards.md`, `docs/role-guides.md`, and `docs/ho-so-cap-nhat-B3-B4.md` (covering all `B3-01..07`, `B4-COVER`, `B4-CH01..21`, `FIG-01..23`, `TBL-01..11`, `REF-01..09` while preserving original `22/06/2026` B3 signature).
-- **Gate `G5` — Traceability & Final Static Audit**:
-  - Expanded `docs/upgrade/coverage.csv` to **173 individual tracked IDs** with verified file paths and honest status/blocker attribution.
-  - Ran full `python -X utf8 scripts/static-verify.py` (`8/8` checks PASS, `0` errors).
+- **Gate `G5` — Traceability, Remote CI & Final Verification**:
+  - Synchronized `docs/upgrade/coverage.csv` (**173** individual tracked IDs, repaired 10 previously shifted CSV rows) and verification docs with GitHub Actions Run `43023689371` (`6/6` CI jobs PASSED at `75cf1ea`).
+  - Re-ran full `python -X utf8 scripts/static-verify.py` (`8/8` checks PASS, `0` errors) and pushed final verified commit to `origin/main`.
 
 ---
 
 ## 2. Residual Limitations & Pre-Pilot Blockers
 
-1. **CI Execution Required (`needs_ci_run`)**: Push branch to GitHub Actions (or run self-hosted Docker/Node/Go/Rust/PostgreSQL runner) to execute all 6 jobs in `.github/workflows/ci.yml` (`node-workspace`, `ai-worker`, `go-services`, `rust-api`, `postgres-rls`, `static-verify`).
+1. **Live Staging Multi-Container Smoke, `next build` & Expo Native Build**: GitHub Actions CI (`43023689371`) verified package builds, Jest suites, `next typegen && tsc --noEmit`, `ai-worker`, Go `vet`/`-race`, Rust `cargo check`/`test`, and `postgis/postgis:15-3.3` migrations + `FORCE RLS` SQL tests. Full `next build` production bundle emission, live multi-container `docker-compose.yml` cross-service HTTP/Kafka/Redis/S3 smoke testing, and EAS Android/iOS binary builds still need to run on staging infrastructure prior to Pilot.
 2. **Database Role & Secrets Provisioning**: In staging/production PostgreSQL, create runtime non-superuser role `smartlogi_app` (`NOSUPERUSER NOBYPASSRLS`) and rotate all secrets (`JWT_SECRET`, `GPS_UDP_HMAC_SECRET`, `GPS_AUTH_TOKEN`, `AI_API_KEY`, Stripe/SendGrid/Twilio/FCM). Keep `GPS_UDP_ALLOW_LEGACY_UNAUTHENTICATED=false`.
 3. **Unmeasured AI/CV & Pilot Field Metrics (`[CHƯA ĐO PILOT]`)**: Forecast MAE/RMSE, VRP gap vs OR-Tools on real routes, MobileNet warehouse confusion matrix, and 12-week Pilot KPIs (picking/packing time, `< 0.5%` pack error, `120 km/day`, COD reconciliation time) remain hypothetical targets until the 12-week Pilot captures baseline & post-intervention telemetry.
 4. **Academic Reference Print Fixes**: Resolve `REF-04` (Crossref HTTP 404) and `REF-06` (Crossref HTTP 429) primary sources plus exact page numbers for `REF-01`/`REF-03` before binding the final printed B4 dossier.
