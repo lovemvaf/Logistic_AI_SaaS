@@ -308,7 +308,7 @@ export class OfflineSyncEngine {
 
   static clearDeltaSyncData(key?: string): void {
     if (key) {
-      const allData = loadFromStorage(DELTA_KEY);
+      const allData = loadFromStorage<{ key: string; data: any; updatedAt: number }>(DELTA_KEY);
       saveToStorage(DELTA_KEY, allData.filter(d => d.key !== key));
     } else {
       saveToStorage(DELTA_KEY, []);

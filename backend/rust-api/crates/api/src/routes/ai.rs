@@ -343,7 +343,9 @@ async fn demand_forecast(
         .clone()
         .unwrap_or_else(|| "WH-CORE".to_string());
 
-    let start_of_month = chrono::DateTime::<chrono::Utc>::from_ymd_opt(2026, 11, 1)
+    let start_of_month = chrono::NaiveDate::from_ymd_opt(2026, 11, 1)
+        .and_then(|d| d.and_hms_opt(0, 0, 0))
+        .map(|naive| naive.and_utc())
         .expect("2026-11-01");
 
     let mut base = Rng::seed(&format!("forecast/{period}/{warehouse}"));
@@ -522,7 +524,9 @@ async fn anomalies(
         vec![kind]
     };
 
-    let date = chrono::DateTime::<chrono::Utc>::from_ymd_opt(2026, 11, 1)
+    let date = chrono::NaiveDate::from_ymd_opt(2026, 11, 1)
+        .and_then(|d| d.and_hms_opt(0, 0, 0))
+        .map(|naive| naive.and_utc())
         .expect("2026-11-01");
 
     let mut rows = Vec::new();
