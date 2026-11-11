@@ -2,18 +2,18 @@
 
 > [!WARNING]
 > **Tài liệu lịch sử (chốt ở mốc thiết kế 06/09/2026 — Không phản ánh cấu trúc mã nguồn hiện tại).**
-> Toàn bộ mô tả cũ về Kong Gateway, tách 10 microservice dưới thư mục cũ `services/`, tách `apps/`, Python FastAPI + Google OR-Tools và Driver PWA đã được tái cấu trúc hoặc đính chính. Để xem kiến trúc thực tế (Modular Monolith NestJS `core-api`, `api/api-gateway`, Go GPS/Webhook, Cloudflare/Hono `ai-worker`, 4 Next.js 15 portals + Expo React Native `driver-app`), vui lòng đọc:
-> - Kiến trúc & CSDL thực tế: [architecture-and-erd.md](architecture-and-erd.md)
-> - Hợp đồng API hiện hành: [api-contracts.md](api-contracts.md)
-> - Hồ sơ đính chính B3–B4: [ho-so-cap-nhat-B3-B4.md](ho-so-cap-nhat-B3-B4.md)
+> Toàn bộ mô tả cũ về Kong Gateway, tách 10 microservice dưới thư mục cũ `services/`, tách `apps/`, Python FastAPI + Google OR-Tools và Driver PWA đã được tái cấu trúc hoặc đính chính. Để xem kiến trúc thực tế (Modular Monolith NestJS `core-api` với **`11` modules**, `api/api-gateway`, Go GPS/Webhook, Cloudflare/Hono `ai-worker`, 4 Next.js 15 portals `91` trang + Expo React Native `driver-app`), vui lòng đọc:
+> - Kiến trúc & CSDL thực tế (`104` models / `88` bảng `FORCE RLS`): [architecture-and-erd.md](architecture-and-erd.md)
+> - Hợp đồng API hiện hành (`77` files / `488` endpoints): [api-contracts.md](api-contracts.md)
+> - Hồ sơ đính chính B3–B4 (cập nhật Gate G7): [ho-so-cap-nhat-B3-B4.md](ho-so-cap-nhat-B3-B4.md)
 
 | Mô tả lịch sử (06/09/2026) | Thực trạng mã nguồn hiện tại |
 |---|---|
-| `Kong API Gateway` | `api/api-gateway` (NestJS proxy + BFF + circuit breaker) |
-| Nhiều service rời tại thư mục cũ | Hợp nhất vào 6 module của `backend/core-api` (`iam`, `wms`, `orders`, `logistics`, `customer`, `notification`) |
-| Python FastAPI + OR-Tools (`ai-service`) | `workers/ai-worker` (Cloudflare Hono TS): VRP NN + 2-opt (`haversine_circuity_1.41`), LLM + công thức fallback, z-score |
-| `Driver PWA` | `frontend/mobile/driver-app` (Expo ~56 / React Native 0.85) |
-| 5 Next.js Apps dưới thư mục cũ `apps/` | 4 Next.js 15 portals dưới `frontend/feature-test/admin-portal` & `frontend/reporting/{tenant-portal,customer-portal,pack-station-web}` + 1 Expo mobile app |
+| `Kong API Gateway` | `api/api-gateway` (NestJS proxy + BFF + `helmet()` + circuit breaker) |
+| Nhiều service rời tại thư mục cũ | Hợp nhất vào **`11` module** của `backend/core-api` (`iam`, `wms`, `orders`, `logistics`, `customer`, `notification`, `geography`, `freight`, `yard`, `pricing`, `trade`) |
+| Python FastAPI + OR-Tools (`ai-service`) | `workers/ai-worker` (Cloudflare Hono TS): VRP NN + 2-opt & Container Drayage (`haversine_circuity_1.41`), Trade Docs & HS Advisory (`NEEDS_CUSTOMS_REVIEW`), LLM fallback, Z-score |
+| `Driver PWA` | `frontend/mobile/driver-app` (Expo ~56 / React Native 0.85, CSPRNG `OfflineSyncEngine`) |
+| 5 Next.js Apps dưới thư mục cũ `apps/` | 4 Next.js 15 portals (`91` trang, đã nối Vercel `visionary19`) dưới `frontend/feature-test/admin-portal` & `frontend/reporting/{tenant-portal,customer-portal,pack-station-web}` + 1 Expo mobile app |
 
 ---
 

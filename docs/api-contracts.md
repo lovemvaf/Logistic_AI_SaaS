@@ -1,143 +1,116 @@
 # Hợp đồng API & Ma trận Định tuyến (Verified API Contracts)
 
 Tài liệu đối chiếu trực tiếp toàn bộ endpoint từ:
-- [`api/api-gateway/src/config/services.config.ts`](../api/api-gateway/src/config/services.config.ts) & [`bff.controller.ts`](../api/api-gateway/src/bff/bff.controller.ts)
-- **70 controller files (407 endpoint decorators)** trong `backend/core-api/src/modules/`
+- [`api/api-gateway/src/config/services.config.ts`](../api/api-gateway/src/config/services.config.ts), [`api/api-gateway/src/main.ts`](../api/api-gateway/src/main.ts) & [`bff.controller.ts`](../api/api-gateway/src/bff/bff.controller.ts)
+- **77 file controller (`85` `@Controller`, `488` endpoint decorators)** thuộc **`11` module** trong `backend/core-api/src/modules/`
 - Go `gps-ingestion-service`, Go `webhook-service`, Cloudflare `workers/ai-worker` và cảnh báo về `backend/rust-api`.
 
-> **Lưu ý kiểm chứng**: Mọi đường dẫn dưới đây đã được quét trực tiếp từ mã nguồn decorator/router và đối soát tĩnh bởi [`scripts/static-verify.py`](../scripts/static-verify.py). Toàn bộ suite build, typecheck (`tsc --noEmit`), parity `api-gateway`, AI Worker, Go `-race`, Rust workspace và PostgreSQL RLS đã **PASSED** trên GitHub Actions ([Run 43023689371](https://github.com/lovemvaf/Logistic_AI_SaaS/actions/runs/43023689371), commit `75cf1ea`); kiểm thử E2E HTTP xuyên container live hiện vẫn chờ môi trường staging.
+> **Lưu ý kiểm chứng**: Mọi đường dẫn dưới đây đã được đối chiếu trực tiếp với decorator/router thực tế trong mã nguồn và xác minh parity tự động qua [`scripts/static-verify.py`](../scripts/static-verify.py) (`8/8 PASS`). Toàn bộ `12` Jest suites, `ai-worker`, `go-services -race`, `rust-api`, `postgres-rls` và `4` Next.js 15 portal builds đạt **6/6 jobs PASSED** tại GitHub Actions [Run `43069842957`](https://github.com/lovemvaf/Logistic_AI_SaaS/actions/runs/43069842957) (commit `4840cce`) và vượt qua `12/12` kịch bản Playwright cục bộ (`tests/e2e/verify_s1_s12.py`).
 
 ---
 
 ## 1. API Gateway (`api/api-gateway`, cổng `3000`) & BFF
 
-### Quy chuẩn chung
-- **Xác thực Edge**: Mọi route không thuộc `PUBLIC_PATHS` phải mang JWT `Authorization: Bearer <token>` (hoặc `x-api-key` theo luồng xác thực key).
-- **Định tuyến `ROUTE_RULES`**: So khớp theo **prefix dài nhất trên ranh giới segment** (`matchRoute`), bảo đảm `/api/v1/gps/ingest` đi xuống Go GPS thay vì bị `/api/v1/gps` nuốt.
+### Quy chuẩn bảo mật & Định tuyến Edge
+- **HTTP Security & CORS** ([`main.ts`](../api/api-gateway/src/main.ts)): Bật `helmet()`, áp dụng allowlist `CORS_ORIGINS` và cho phép tường minh các header idempotency `X-Sync-Id`, `Idempotency-Key`.
+- **Xác thực Edge**: Mọi route không thuộc `PUBLIC_PATHS` phải mang JWT `Authorization: Bearer <token>` (hoặc `x-api-key` ở luồng tích hợp đối tác). **Đã gỡ `/api/v1/inbound/webhooks` khỏi `PUBLIC_PATHS`** để ngăn caller ẩn danh kích hoạt service webhook.
+- **Định tuyến `ROUTE_RULES`**: So khớp theo **prefix dài nhất trên ranh giới segment** (`matchRoute`), bao phủ đầy đủ cả 5 module Enterprise mới (`/api/v1/geography`, `/api/v1/freight`, `/api/v1/yard`, `/api/v1/trade`, `/api/v1/pricing`) và ưu tiên `/api/v1/gps/ingest` xuống Go GPS trước `/api/v1/gps`.
 - **Circuit Breaker (`ProxyMiddleware`)**: Ngắt mạch sau `5` lỗi kết nối liên tiếp trong `30s`.
-- **BFF Endpoints nội bộ Gateway**:
-  - `GET /api/v1/bff/tenant-dashboard`: Tổng hợp số liệu tổng quan tenant cho cổng quản trị.
-  - `GET /api/v1/bff/admin-dashboard`: Tổng hợp số liệu tổng quan toàn nền tảng (`SUPER_ADMIN`).
-- **Gateway Utility Endpoints (bỏ qua proxy downstream)**: `GET /health`, `GET /api/health`, `GET /routes`, `GET /api/gateway/health`, `GET /api/gateway/metrics`, `GET /api/docs`.
+- **BFF & Utility Endpoints**: `GET /api/v1/bff/tenant-dashboard`, `GET /api/v1/bff/admin-dashboard`, `GET /health`, `GET /api/health`, `GET /routes`, `GET /api/gateway/health`, `GET /api/gateway/metrics`, `GET /api/docs`.
 
 ### `PUBLIC_PATHS` (Không bắt buộc JWT tại Gateway)
-`/health`, `/api/health`, `/routes`, `/api/docs`, `/api/gateway/health`, `/api/v1/public`, `/api/v1/track`, `/api/v1/health`, `/api/v1/gps/ingest` *(xác thực token riêng tại Go GPS service)*, `/api/v1/webhooks/stripe` *(xác thực chữ ký Stripe)*, `/api/v1/inbound/webhooks`, `/api/v1/tenant/auth`, `/api/v1/admin/auth`, `/api/v1/client/auth`, `/api/v1/mobile/auth`.
+`/health`, `/api/health`, `/routes`, `/api/docs`, `/api/gateway/health`, `/api/v1/public`, `/api/v1/gps/ingest` *(xác thực token riêng constant-time tại Go GPS service)*, `/api/v1/track`, `/api/v1/health`, `/api/v1/webhooks/stripe` *(xác thực chữ ký Stripe)*, `/api/v1/tenant/auth`, `/api/v1/admin/auth`, `/api/v1/client/auth`, `/api/v1/mobile/auth`.
 
 ---
 
-## 2. Quy chuẩn Request, Error Envelope & Idempotency (`backend/core-api`, prefix `/api/v1`)
+## 2. Quy chuẩn Request, Error Envelope & DB Idempotency (`backend/core-api`, prefix `/api/v1`)
 
-- **ValidationPipe toàn cục** ([`main.ts`](../backend/core-api/src/main.ts)): `whitelist: true`, `forbidNonWhitelisted: true`, `transform: true`. Trường thừa ngoài DTO sẽ bị từ chối với HTTP `400`.
-- **Chuẩn phản hồi lỗi** ([`http-exception.filter.ts`](../backend/core-api/src/core/http/http-exception.filter.ts)):
-  ```json
-  {
-    "ok": false,
-    "statusCode": 400,
-    "message": "Mô tả lỗi cụ thể hoặc mảng lỗi validation",
-    "timestamp": "2026-11-11T10:00:00.000Z",
-    "path": "/api/v1/..."
-  }
-  ```
-- **Phân trang chuẩn**: Các endpoint danh sách kẹp `page >= 1`, `1 <= limit <= 100` và trả cấu trúc `{ data: [...], meta: { total, page, limit, totalPages } }` (một số portal alias trả mảng trực tiếp khi `frontend` đọc thẳng).
-- **Idempotency di động (`X-Sync-Id` / `Idempotency-Key`)** ([`idempotency.interceptor.ts`](../backend/core-api/src/core/http/idempotency.interceptor.ts)): Gắn cho các request ghi offline (`POST`/`PATCH`/`DELETE`), khóa cache theo `${tenantScope}:${userScope}:${routeScope}:${syncId}`, TTL `24h`, tối đa `5.000` khóa in-memory; request trùng đang xử lý trả `409 ConflictException`.
+- **ValidationPipe toàn cục** ([`main.ts`](../backend/core-api/src/main.ts)): `whitelist: true`, `forbidNonWhitelisted: true`, `transform: true`. Trường thừa ngoài DTO bị từ chối với HTTP `400`.
+- **Chuẩn phản hồi lỗi** ([`http-exception.filter.ts`](../backend/core-api/src/core/http/http-exception.filter.ts)): Trả cấu trúc thống nhất `{ ok: false, statusCode, message, timestamp, path }`.
+- **DB Idempotency (`X-Sync-Id` / `Idempotency-Key`)** ([`idempotency.interceptor.ts`](../backend/core-api/src/core/http/idempotency.interceptor.ts)): Lưu bền vững vào bảng PostgreSQL `api_idempotency_records` (kích hoạt `FORCE RLS`, TTL cấu hình, khóa duy nhất `(tenant_id, principal_id, operation, idempotency_key)`) kèm hash payload **`body_sha256`**:
+  - Request trùng key đang chạy hoặc đổi payload khác `body_sha256` -> trả **`409 Conflict`**.
+  - Request trùng key cùng payload đã hoàn tất -> phát lại HTTP response đã lưu.
 
 ---
 
-## 3. Hợp đồng `backend/core-api` (70 Controllers / 407 Endpoint Decorators)
+## 3. Hợp đồng `backend/core-api` (`11` Modules / `77` Files / `85` `@Controller` / `488` Endpoints)
 
-### 3.1. Module IAM & Platform Governance (23 Controllers / 106 Endpoints)
+### 3.1. Module IAM & Platform Governance (`23` Files / `23` `@Controller` / `108` Endpoints)
 
-| Controller | Prefix (`/api/v1/...`) | Số endpoint | Bảo vệ RBAC chính | Đường dẫn tiêu biểu |
+| Controller | Prefix (`/api/v1/...`) | Số endpoint | Bảo vệ RBAC chính | Đường dẫn & Nâng cấp mới |
 |---|---|---:|---|---|
 | `admin-auth` | `/admin/auth` | 7 | Public login / JWT profile | `POST /login`, `POST /google`, `POST /forgot-password`, `POST /reset-password`, `POST /change-password`, `GET /profile`, `PATCH /profile` |
 | `admin-tenants` | `/admin/tenants` | 5 | `@RequireRoles(SUPER_ADMIN)` | `GET /`, `GET /:id`, `POST /`, `PATCH /:id`, `DELETE /:id` |
 | `admin-billing` | `/admin/billing` | 8 | `@RequireRoles(SUPER_ADMIN)` + `BillingManage` khi ghi | `GET /`, `GET /plans`, `POST /plans`, `PUT /plans/:id`, `DELETE /plans/:id`, `GET /invoices`, `POST /invoices`, `POST /payments` |
-| `admin-dashboard` | `/admin/dashboard` | 2 | `@RequireRoles(SUPER_ADMIN)` | `GET /stats`, `GET /logistics` (bọc `runAsPlatform`) |
+| `admin-dashboard` | `/admin/dashboard` | **4** | `@RequireRoles(SUPER_ADMIN)` | `GET /stats`, `GET /logistics`, **`GET /outbox`**, **`POST /outbox/:id/redrive`** |
 | `admin-audit-logs` | `/admin/audit-logs` | 2 | `@RequireRoles(SUPER_ADMIN)` | `GET /`, `GET /actions` |
-| `tenant-auth` | `/tenant/auth` | 9 | Public auth + JWT tenant | `POST /login`, `POST /google`, `POST /refresh`, `POST /forgot-password`, `POST /reset-password`, `POST /change-password`, `GET /profile`, `PATCH /profile`, `GET /tenants` |
-| `client-auth` | `/client/auth` | 8 | Public auth + JWT client (`schemaName` từ JWT) | `POST /login`, `POST /google`, `POST /refresh`, `POST /forgot-password`, `POST /reset-password`, `POST /change-password`, `GET /profile`, `PATCH /profile` |
-| `mobile-auth` | `/mobile/auth` | 5 | Public auth | `POST /login`, `POST /google`, `POST /refresh`, `POST /forgot-password`, `POST /reset-password` |
-| `auth` | `/auth` | 1 | Legacy alias | `POST /login` |
-| `tenant-users` | `/tenant/users` | 6 | `@ExcludeRoles(CUSTOMER_CLIENT)` | `GET /`, `GET /:id`, `POST /`, `PATCH /:id`, `DELETE /:id`, `PATCH /:id/roles` |
-| `tenant-roles` | `/tenant/roles` | 5 | `@ExcludeRoles(CUSTOMER_CLIENT)` | `GET /`, `GET /:id`, `POST /`, `PATCH /:id`, `DELETE /:id` |
-| `branches` (IAM) | `/tenant/branches` | 5 | `@ExcludeRoles(CUSTOMER_CLIENT)` | `GET /`, `GET /:id`, `POST /`, `PATCH /:id`, `DELETE /:id` |
-| `feature-flags` | `/tenant/feature-flags` | 6 | `@ExcludeRoles(CUSTOMER_CLIENT)` | `GET /`, `GET /check/:key`, `POST /`, `PATCH /:id`, `DELETE /:id`, `POST /bulk` |
-| `tenant-settings` | `/tenant/settings` | 2 | `@ExcludeRoles(CUSTOMER_CLIENT)` | `GET /`, `PATCH /` |
-| `tenant-billing` | `/tenant/billing` | 4 | `@ExcludeRoles(CUSTOMER_CLIENT)` | `GET /plan`, `GET /invoices`, `POST /payments`, `POST /payment-intent` |
-| `tenant-audit-logs` | `/tenant/audit-logs` | 2 | `@ExcludeRoles(CUSTOMER_CLIENT)` + lọc bắt buộc `tenantId` | `GET /`, `GET /actions` |
-| `tenant-dashboard` | `/tenant/dashboard` | 1 | `@ExcludeRoles(CUSTOMER_CLIENT)` | `GET /stats` |
-| `api-keys` & `api-key-verify` | `/api-keys` | 5 | `@ExcludeRoles(CUSTOMER_CLIENT)` (`verify` nội bộ) | `GET /`, `POST /`, `DELETE /:id`, `POST /:id/revoke`, `POST /verify` |
-| `iam-portal-aliases` | `/` (root `/api/v1`) | 19 | `@ExcludeRoles(CUSTOMER_CLIENT)` | `/users*` (7), `/roles*` (6), `/settings` (`GET/PATCH`), `/dashboard/summary`, `/reports/{summary,on-time,costs,fleet}` |
-| `stripe-webhook`, `health`, `metrics` | `/webhooks/stripe`, `/health`, `/metrics` | 4 | Signature / Public ops | `POST /webhooks/stripe`, `GET /health`, `GET /health/ready`, `GET /metrics` |
+| `tenant-auth`, `client-auth`, `mobile-auth`, `auth` | `/tenant/auth`, `/client/auth`, `/mobile/auth`, `/auth` | 23 | Public auth + JWT (`schemaName` từ JWT) | Login, Google OAuth, refresh, forgot/reset/change-password, profile |
+| `tenant-users`, `tenant-roles`, `branches`, `feature-flags`, `tenant-settings`, `tenant-billing`, `tenant-audit-logs`, `tenant-dashboard`, `api-keys` | `/tenant/*`, `/api-keys` | 36 | `@ExcludeRoles(CUSTOMER_CLIENT)` | Quản trị nội bộ tenant, khóa `client_api_keys` / `tenant_api_keys` có `FORCE RLS`, lọc `tenantId` trên audit log |
+| `iam-portal-aliases`, `stripe-webhook`, `health`, `metrics` | `/`, `/webhooks/stripe`, `/health`, `/metrics` | 23 | Alias / Signature / Ops | `/users*`, `/roles*`, `/settings`, `/dashboard/summary`, `/reports/*`, `GET /health/ready`, `GET /metrics` |
 
-### 3.2. Module WMS — Quản lý Kho & Đóng gói (13 Controllers / 93 Endpoints)
+### 3.2. Module WMS — Quản lý Kho & Đóng gói (`13` Files / `17` `@Controller` / `95` Endpoints)
 
-Mọi controller nội bộ thuộc nhóm WMS đều gắn `@ExcludeRoles(Roles.CUSTOMER_CLIENT)`:
+Toàn bộ controller nội bộ thuộc nhóm WMS gắn `@ExcludeRoles(Roles.CUSTOMER_CLIENT)`:
+- `warehouses` & `branches` (`/warehouses`, `/branches`, `10` eps), `locations` & `bins` (`/locations`, `/bins`, `10` eps), `products` (`/products`, `7` eps), `inventory` & `adjustments` (`/inventory`, `9` eps), `cycle-counts` (`/inventory/cycle-counts`, `6` eps), `waves` & `tasks` (`/waves`, `/tasks`, `10` eps), `mobile` (`/mobile`, `2` eps), `warehouse-ops` (`/inventory/ops`, `20` eps), `wms-portal-aliases` (`/warehouses/bins`, `/equipment`, `/packing-sessions`, `/stations`, `/staff`, `21` eps).
 
-| Controller | Prefix (`/api/v1/...`) | Số endpoint | Đường dẫn chính |
-|---|---|---:|---|
-| `warehouses` & `branches` | `/warehouses`, `/branches` | 10 | CRUD đầy đủ + `PATCH /warehouses/:id/soft-delete` |
-| `locations` & `bins` | `/locations`, `/bins` | 10 | `/locations/{zones,racks,bins}` (`GET`/`POST`), `/bins` (`GET`, `GET /:id`, `POST`, `PATCH /:id`) |
-| `products` | `/products` | 7 | `GET /`, `GET /:id`, `POST /`, `POST /import`, `PATCH /:id`, `DELETE /:id`, `PATCH /:id/soft-delete` |
-| `inventory` & `adjustments` | `/inventory`, `/inventory/adjustments` | 9 | `GET /`, `GET /summary`, `GET /ledger`, `POST /adjust`, `POST /receive`, `POST /transfer`, `POST /putaway-suggestion`, `GET /:id`, `GET /adjustments` |
-| `cycle-counts` | `/inventory/cycle-counts` | 6 | `POST /`, `GET /`, `GET /:id`, `POST /:id/submit`, `POST /:id/approve`, `PATCH /:id/status` |
-| `waves` & `tasks` | `/waves`, `/tasks` | 10 | `/waves` (`POST /generate`, `POST /allocate`, `GET /`, `GET /:id`), `/tasks` (`GET /`, `POST /`, `POST /:id/assign`, `GET /:id`, `POST /:id/confirm`, `POST /:id/complete`) |
-| `mobile` (PDA scan) | `/mobile` | 2 | `GET /sync`, `POST /scan-logs` |
-| `warehouse-ops` | `/inventory/ops` | 20 | Ca & thiết bị (`POST /shift/start`, `PATCH /shift/:id/end`, `POST /equipment/checkout`, `PATCH /equipment/:id/return`, `GET /equipment/logs`), Pack log (`POST /pack-log`, `GET /pack-log`, `POST /pack-log/next`, `POST /pack-log/scan`, `GET /pack-log/summary`, `GET /pack-log/anomalies`, `POST /pack-log/predict`, `POST /pack-log/:packCode/seal`, `GET /pack-log/:packCode`), SKU lookup (`GET /skus`, `GET /skus/barcode/:barcode`, `GET /skus/:sku`), Đính chính (`GET/POST /corrections`, `PATCH /corrections/:id`) |
-| `wms-portal-aliases` | `/warehouses/bins`, `/equipment`, `/packing-sessions`, `/stations`, `/staff` | 19 | Alias phục vụ Pack Station & Tenant Portal (gồm `GET /packing-sessions/active`, `POST /packing-sessions/:id/seal`, ...) |
-
-### 3.3. Module Orders & Returns (8 Controllers / 48 Endpoints)
+### 3.3. Module Orders & Returns (`8` Files / `10` `@Controller` / `50` Endpoints)
 
 | Controller | Prefix (`/api/v1/...`) | Số endpoint | Đường dẫn & Quyền đáng chú ý |
 |---|---|---:|---|
-| `orders` | `/orders` | 13 | `@ExcludeRoles(CUSTOMER_CLIENT)`: `POST /`, `GET /`, `GET /track/:code`, `POST /assign-trip`, `GET /:id/{live,sla,tracking}`, `GET /:id`, `PATCH /:id`, `POST /:id/cancel`, `POST /:id/status`, `POST /:id/partial`, `PATCH /:id/reschedule` |
+| `orders` | `/orders` | 13 | `@ExcludeRoles(CUSTOMER_CLIENT)`: lifecycle đơn hàng, bulk/partial/reschedule/live/sla |
 | `bulk-upload` | `/orders/bulk` | 1 | `POST /upload` (`@ExcludeRoles(CUSTOMER_CLIENT)`) |
-| `orders-portal-aliases` | `/tenant/clients`, `/customers`, `/order-partials` | 13 | Quản lý hạn mức tín dụng (`PATCH /tenant/clients/:id/credit`), thống kê khách B2B (`/customers/:id/{stat,reviews}`), xử lý giao một phần |
-| `returns` (Orders RMA) | `/` | 9 | `POST/GET /orders/:orderId/return-requests`, `GET /return-requests/:id`, `PATCH /return-requests/:id/{approve,reject}`, `POST /return-requests/:id/{pickup,inspect,refund}` *(tất cả trừ `/return-reasons` chặn `CUSTOMER_CLIENT`)* |
-| `clients`, `tracking`, `webhooks`, `auth` | `/clients`, `/tracking`, `/webhooks`, `/auth` | 12 | Khách B2B nội bộ (`@ExcludeRoles(CUSTOMER_CLIENT)`), `POST /tracking/events`, `GET/POST/PATCH :id/status/DELETE /webhooks`, `POST /auth/refresh-token` |
+| `orders-portal-aliases` | `/tenant/clients`, `/customers`, `/order-partials` | 13 | Hạn mức tín dụng, thống kê khách B2B, giao một phần |
+| `returns` (Orders RMA) | `/` | 9 | RMA nội bộ (`@ExcludeRoles(CUSTOMER_CLIENT)` trừ danh mục `/return-reasons`) |
+| `webhooks` | `/webhooks` | **6** | `@ExcludeRoles(CUSTOMER_CLIENT)`: CRUD webhook (tenant-scoped) + **`GET /outbox`**, **`POST /outbox/:id/redrive`** |
+| `clients`, `tracking`, `auth` | `/clients`, `/tracking`, `/auth` | 8 | Quản lý client nội bộ, push tracking event (Outbox HMAC), refresh token |
 
-### 3.4. Module Logistics, Fleet, GPS, COD & Driver App (17 Controllers / 124 Endpoints)
+### 3.4. Module Logistics, Fleet, GPS, COD & Driver App (`17` Files / `18` `@Controller` / `124` Endpoints)
 
-| Controller | Prefix (`/api/v1/...`) | Số endpoint | Đường dẫn & Bảo vệ chính |
-|---|---|---:|---|
-| `logistics` | `/logistics` | 43 | Chuyến/shipments/tối ưu bất đồng bộ (`POST /routing/optimize-async`, `GET/POST apply`), báo cáo (`reports/{trips,fleet}`), tài xế (`drivers/ranking`, `drivers/:id/trip-log`), xe (`fuel`, `maintenance`), `geofences`, `sos` (`acknowledge`, `resolve`) |
-| `trips`, `drivers`, `vehicles`, `geofences`, `gps` | `/trips`, `/drivers`, `/vehicles`, `/geofences`, `/gps` | 25 | CRUD chuẩn cho đội xe, tuyến, vùng địa lý và `POST /gps/batch` |
-| `logistics-portal-aliases` | `/finance`, `/tenant/ai-insights` | 15 | `@ExcludeRoles(CUSTOMER_CLIENT, DRIVER)`: `/finance/{cod-remittances,bank-transactions,expenses,invoices}` + `/tenant/ai-insights` (`GET /`, `GET /:id`, `POST /:id/decision`) |
-| `finance` & `cod-remittances` | `/logistics/finance`, `/finance/cod` | 13 | `POST /logistics/finance/reconcile` (đối chiếu sao kê ưu tiên `qrCodeToken` / mã phiếu trong `$transaction`), duyệt/từ chối chi phí & SOS, duyệt/từ chối COD |
-| `logistics/returns` | `/logistics/returns` | 7 | `GET /`, `GET /:id`, `POST /:id/{create-pickup-trip,confirm-pickup,complete-return,inspect,refund}` (`completeReturn` dùng `updateMany` nguyên tử chống cộng tồn lặp) |
-| `driver-app`, `mobile-trips`, `mobile-gps`, `mobile-wallet`, `upload` | `/driver-app`, `/mobile/*` | 11 | Khóa ownership `driver.id === trip.driverId`, `IdempotencyInterceptor` (`X-Sync-Id`), `POST /mobile/uploads/pod/:deliveryId` giới hạn JPEG/PNG/WebP <= 10MB |
-| `ai-management` & `ai-models` | `/logistics/ai`, `/ai/models` | 10 | CRUD metadata model & feedback (`ai_models`, `ai_feedbacks`) |
+- `logistics` (`/logistics`, `43` eps), `trips`, `drivers`, `vehicles`, `geofences`, `gps` (`25` eps), `logistics-portal-aliases` (`/finance`, `/tenant/ai-insights`, `15` eps), `finance` & `cod-remittances` (`13` eps — đối soát `qrCodeToken` trong `$transaction`), `logistics/returns` (`7` eps), `driver-app` & `mobile/*` (`11` eps — khóa `driver.id === trip.driverId` + DB Idempotency `X-Sync-Id`), `ai-management` & `ai-models` (`10` eps).
 
-### 3.5. Module Customer & Public Tracking + Notification (9 Controllers / 36 Endpoints)
+### 3.5. Module Customer & Public Tracking (`8` Files / `9` `@Controller` / `45` Endpoints) & Notification (`2` Files / `8` Endpoints)
 
-| Controller | Prefix (`/api/v1/...`) | Số endpoint | Đường dẫn chính |
+| Controller | Prefix (`/api/v1/...`) | Số endpoint | Đường dẫn chính & Nâng cấp mới |
 |---|---|---:|---|
 | `client-portal` | `/client` | 4 | `GET /dashboard`, `GET /stock`, `GET /profile`, `PATCH /profile` (`client_id` từ JWT) |
-| `client-orders`, `client-inventory`, `client-invoices`, `client-returns`, `client-webhooks` | `/client/*` | 17 | Đơn B2B + `POST /cancel`, tồn kho ký gửi, hóa đơn + `POST /:id/{pay,payments}` hỗ trợ thanh toán một phần, hoàn trả, webhook cá nhân (SSRF + mask secret) |
-| `public-tracking` | `/public` và `/track` | 7 | Public PII-safe whitelist: `/public/{track,verify}/:code`, `/public/track/:code/{live,sla}`, `/track/:code{,/live,/sla}` |
-| `notifications` & `event` | `/notifications` | 8 | `GET /`, `GET /unread-count`, `POST /send`, `PUT /read`, `PUT|POST /read-all`, `GET /events`, `DELETE /:id` + Kafka Event Consumer |
+| `client-orders`, `client-inventory`, `client-invoices`, `client-returns`, `client-webhooks` | `/client/*` | 17 | Tự phục vụ đơn B2B, tồn kho, thanh toán hóa đơn, trả hàng, webhook (SSRF + che secret) |
+| **`client-freight`** *(Mới G4–G5)* | **`/client/freight`** | **16** | `GET /geography/units`, `GET/POST /rfqs`, `GET/POST /quotes`, `POST /quotes/:id/accept`, `GET /bookings`, `GET /shipments`, `GET /shipments/:id`, `GET/POST /documents`, `GET /invoices`, `GET/POST /disputes`, **`GET/POST /tracking-grants`**, **`POST /tracking-grants/:id/revoke`** |
+| **`public-tracking`** *(Hardened G3–G5)* | `/public`, `/track` | **8** | **`GET /public/t/:token`** (xác thực `PublicTrackingGrant` qua SHA-256 + TTL + chưa thu hồi) + `/public/{track,verify}/:code{,/live,/sla}` & `/track/:code{,/live,/sla}` (**đã gỡ `shippingFee` và làm tròn thô tọa độ GPS với truy cập ẩn danh**) |
+| `notifications` & `event` | `/notifications` | 8 | Hộp thư thông báo, mark read & Kafka consumer |
+
+### 3.6. Các Module Enterprise Mới (`5` Modules / `6` Controllers / `58` Endpoints)
+
+Mọi endpoint dưới `/geography/*`, `/freight/*`, `/yard/*`, `/pricing/*`, `/trade/*` đều gắn `@ExcludeRoles(Roles.CUSTOMER_CLIENT)` + `@RequirePermissions(...)`; `/geography/admin/*` khóa cứng `@RequireRoles(Roles.SUPER_ADMIN)`:
+
+| Module & Controller | Prefix (`/api/v1/...`) | Số endpoint | Đường dẫn thực tế |
+|---|---|---:|---|
+| **`geography`** (`GeographyController` & `GeographyAdminController`) | `/geography`, `/geography/admin` | **11** | `GET /overview`, `GET /units`, `GET /units/resolve` (hỗ trợ 19 alias cũ -> 95 ĐVHC 2026), `GET /units/:id`, `GET /facilities`, `GET /facilities/:id`, `POST /facilities/:id/queue-observations`, `GET /corridors`, `GET /restrictions`; Admin: `POST /units/bootstrap-2026`, `PATCH /units/:id/official` |
+| **`freight`** (`FreightController`) | `/freight` | **19** | `GET /summary`, `GET/POST /{tractors,chassis,containers}`, `GET/POST /assignments` *(kiểm tra trùng lịch đầu kéo/chassis/container/tài xế trả **`409 Conflict`**)*, `GET/POST /rfqs`, `GET/POST /quotes`, `POST /quotes/:id/accept`, `GET/POST /bookings`, `GET/POST /shipments`, `POST /shipments/:id/legs` |
+| **`yard`** (`YardController`) | `/yard` | **7** | `GET/POST /yards`, `GET/POST /gate-events` *(cập nhật vị trí container & slot)*, `GET /eirs` *(biên bản giao nhận Equipment Interchange Receipt)*, `GET/POST /yards/:id/slots` |
+| **`pricing`** (`PricingController`) | `/pricing` | **13** | `GET/POST /{contracts,surcharges,dem-det-rules}`, **`GET /shipments/:id/dem-det`** *(tách biệt `DEM` cổng/bãi vs `DET` lưu vỏ ngoài, tính weekend/holiday & tier 1/tier 2)*, `GET/POST /invoices`, `POST /invoices/:id/payments` *(ghi `FreightLedgerEntry` & `PaymentAllocation`)*, `GET/POST /disputes`, `PATCH /disputes/:id/resolve` |
+| **`trade`** (`TradeController`) | `/trade` | **8** | `GET/POST /documents` *(tạo phiên bản `TradeDocumentVersion` + hash SHA-256)*, `POST /bookings/:bookingId/reconcile` *(đối chiếu CI vs PL vs BL)*, `GET/POST /declarations`, `POST /declarations/:id/submit` *(luồng xanh/vàng/đỏ hải quan)*, `POST /hs-suggestions`, `POST /hs-suggestions/:id/review` *(bắt buộc quyền `TradeApprove` duyệt tay từ `NEEDS_CUSTOMS_REVIEW`)* |
 
 ---
 
-## 4. Dịch vụ Go, AI Worker & Rust API Thử nghiệm
+## 4. Dịch vụ Go, AI Worker Enterprise & Rust API Thử nghiệm
 
 ### 4.1. Go GPS Ingestion Service ([`backend/gps-ingestion-service/main.go`](../backend/gps-ingestion-service/main.go))
-- **HTTP (`:8090`, Gateway `/api/v1/gps/ingest`)**: `POST /gps/batch`, `GET /health`. Xác thực `Authorization: Bearer <GPS_AUTH_TOKEN>` dùng `constantTimeBearerMatch` (`subtle.ConstantTimeCompare`).
-- **UDP Socket (`:8091`)**: Mặc định bật chế độ xác thực chặt (`GPS_UDP_ALLOW_LEGACY_UNAUTHENTICATED=false`). Packet JSON phải kèm chữ ký HMAC-SHA256 hợp lệ (`verifyUDPPacket`), `timestamp` trong cửa sổ ±300s và chống gửi lặp qua `replayCache`.
-- **Kiểm định & Geofence**: Ràng buộc tọa độ (`-90..90`, `-180..180`, tốc độ `0..150 m/s`), kiểm tra **mọi điểm trong batch** theo thứ tự thời gian qua PostGIS `ST_Contains`, chuyển `tripId` rỗng thành SQL `NULL`, chống spam SOS trong cửa sổ cooldown `5` phút.
+- **HTTP (`:8090`, Gateway `/api/v1/gps/ingest`)**: `POST /gps/batch`, `GET /health`. Xác thực `Authorization: Bearer <GPS_AUTH_TOKEN>` dùng `constantTimeBearerMatch`.
+- **UDP Socket (`:8091`)**: Mặc định bật xác thực chặt (`GPS_UDP_ALLOW_LEGACY_UNAUTHENTICATED=false`), dùng khóa **`GPS_UDP_HMAC_SECRET` tách riêng khỏi HTTP Bearer**, ký **canonical v2** bao phủ đủ `driver_id`, `trip_id`, `lat`, `lng`, `speed`, `heading`, `timestamp`, `is_offline_cached`, kèm kiểm tra dải `heading` (`0..360`) và **FIFO bounded replay cache**.
+- **Kiểm định & Geofence**: Kiểm tra **mọi điểm trong batch** theo thứ tự thời gian qua PostGIS `ST_Contains`, chuyển `tripId` rỗng thành SQL `NULL`, chống spam SOS trong cửa sổ cooldown `5` phút.
 
 ### 4.2. Go Webhook Service ([`backend/webhook-service/main.go`](../backend/webhook-service/main.go))
-- **Cổng `:8092` (Gateway `/api/v1/inbound/webhooks`)**: `POST /deliver`, `GET /health`.
-- Chặn SSRF qua `validateWebhookURL` + `isRestrictedIP`: chỉ cho phép `https://` (trừ khi dev tắt tường minh), phân giải DNS và chặn loopback (`127.0.0.0/8`, `::1`), IP private RFC1918, link-local (`169.254.0.0/16`), CGNAT (`100.64.0.0/10`) trước khi gửi và chặn redirect. Tự động che `secretToken` dạng `whsec_****`.
+- **Cổng `:8092`**: `POST /deliver`, `GET /deliveries`, `POST /redrive`, `GET /health` — **cả 3 route nghiệp vụ đều yêu cầu `WEBHOOK_AUTH_TOKEN`** (`constant-time` compare), và đã gỡ khỏi `PUBLIC_PATHS` của Gateway.
+- **Độ tin cậy hàng đợi**: Sử dụng **Redis Streams (`XREADGROUP` + `XACK` + `XAUTOCLAIM`) + PostgreSQL `webhook_deliveries` + DLQ / `/redrive`** thay cho `LPUSH/BRPOP` dễ mất job; chống trùng idempotency nguyên tử bằng `SetNX`.
+- **Bảo vệ SSRF DNS Rebinding TOCTOU**: Kiểm định URL qua `validateWebhookURL`, chặn redirect và dùng `safeDialContext` **ghim thẳng địa chỉ IP đã kiểm tra khi mở kết nối TCP**, ngăn kỹ thuật rebinding trỏ vào loopback/RFC1918/metadata/cổng hạn chế. Chữ ký outbound dùng `X-SLG-Signature`.
 
 ### 4.3. Cloudflare AI Worker ([`workers/ai-worker`](../workers/ai-worker))
-- Mount song song tại `/ai` và `/api/v1/ai` cùng route gốc `POST /routing/solve` (xác thực JWT Bearer hoặc header nội bộ `x-ai-api-key`):
-  - `POST /api/v1/ai/v1/chat`: Chat & Vision (`images`), bọc dữ liệu không tin cậy bằng `wrapUntrustedData`.
-  - `POST /api/v1/ai/v1/predict/{demand,delivery-time,churn}` & `/v1/analyze`: Trả kèm `method` (`llm_cf_or_openai` hoặc `deterministic_heuristic_fallback`), `fallback_used`, `evaluation_status: "unmeasured"`.
-  - `POST /api/v1/ai/v1/detect/anomalies`: Z-score sample stddev, trả `min_recommended_samples: 5` và `data_sufficiency`.
-  - `POST /routing/solve` (và `/api/v1/ai/v1/routing/solve`): TS Nearest-Neighbor + 2-opt, trả `distance_source: "haversine_circuity_1.41"`, báo rõ `unassigned` kèm lý do tải trọng.
-  - `GET /api/v1/ai/v1/training-dataset`: Xuất các bản ghi phản hồi có `human_corrected IS NOT NULL`.
-  - `POST /api/v1/ai/v1/train/:type`: **Luôn trả HTTP `501` (`TRAINING_NOT_IMPLEMENTED`)**, dẫn hướng về `/v1/training-dataset` và quy trình huấn luyện offline.
+- Mount song song tại `/ai` và `/api/v1/ai` cùng route gốc `/routing/solve` (JWT Bearer hoặc `x-ai-api-key`):
+  - `POST /api/v1/ai/v1/chat`, `/v1/predict/{demand,delivery-time,churn}`, `/v1/analyze`, `/v1/detect/anomalies` (Z-score `min_recommended_samples: 5`), `/v1/routing/solve` (TS NN + 2-opt, `distance_source: "haversine_circuity_1.41"`).
+  - **`POST /api/v1/ai/v1/routing/containers`**: Heuristic time-window + backhaul drayage container (`20GP/40GP/40HC/40RF/45HC`, lọc reefer genset & tải trọng max, trả `evaluation_status: "unmeasured_heuristic"`).
+  - **`POST /api/v1/ai/v1/trade-documents/extract`** & **`/v1/trade-documents/reconcile`**: Trích xuất trường hóa đơn/packing list/B/L có bọc `wrapUntrustedData`; **file PDF mã hóa mật khẩu trả thẳng HTTP `422 FAILED_PASSWORD_PROTECTED` kèm `requires_manual_upload: true`** (tuyệt đối không tự bịa nội dung).
+  - **`POST /api/v1/ai/v1/hs-code/suggest`**: Trả top-K mã HS tham khảo kèm cờ bắt buộc **`advisoryOnly: true`, `requiresHumanReview: true`, `status: "NEEDS_CUSTOMS_REVIEW"`** và khuyến cáo pháp lý.
+  - `GET /api/v1/ai/v1/training-dataset` & `POST /api/v1/ai/v1/train/:type` (**HTTP `501 TRAINING_NOT_IMPLEMENTED`**).
 
 ### 4.4. Rust API (`backend/rust-api`) — Cảnh báo Bề mặt Thử nghiệm
-Workspace Axum này hiện chỉ mang tính thử nghiệm chuyển đổi. Phần lớn route nghiệp vụ trả HTTP `501` trong [`meta.rs`](../backend/rust-api/crates/api/src/routes/meta.rs), còn [`ai.rs`](../backend/rust-api/crates/api/src/routes/ai.rs) trả kết quả sinh xác định giả lập (synthetic stub) — **không sử dụng làm backend sản xuất và không tính vào mức độ hoàn thiện backend đang chạy**.
+Workspace Axum này đã biên dịch sạch và pass **`8/8` unit test trong CI** (`cargo check --workspace --all-targets && cargo test`), nhưng phần lớn route nghiệp vụ vẫn giữ `501` trong [`meta.rs`](../backend/rust-api/crates/api/src/routes/meta.rs) và [`ai.rs`](../backend/rust-api/crates/api/src/routes/ai.rs) trả kết quả sinh xác định thử nghiệm — **không sử dụng làm backend sản xuất thay cho `core-api`**.

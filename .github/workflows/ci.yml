@@ -122,6 +122,7 @@ jobs:
           npx tsx tests/journey.test.ts
           npx tsx tests/vrp.test.ts
           npx tsx tests/compute.test.ts
+          npx tsx tests/enterprise.test.ts
 
   go-services:
     name: Go Services Vet & Race Tests
