@@ -92,7 +92,7 @@ export default function PackLogsPage() {
           ...scanLog,
           session,
           station: station ?? { id: '-', code: '-', name: '-', status: 'OFFLINE' },
-          staff: staff ?? { id: '-', staffCode: '-', fullName: '-', role: 'WAREHOUSE_STAFF', phone: '-' },
+          staff: staff ?? { id: '-', staffCode: '-', fullName: '-', email: '-', role: 'WAREHOUSE_STAFF', phone: '-' },
           order,
         });
       }

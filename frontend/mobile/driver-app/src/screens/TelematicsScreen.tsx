@@ -4,7 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import NetInfo from '@react-native-community/netinfo';
 import { postWithOffline } from '../lib/offline-utils';
-import { OfflineSyncEngine } from '../lib/offline-sync';
+import { OfflineSyncEngine, SyncStatus } from '../lib/offline-sync';
 import { initBackgroundLocation } from '../lib/backgroundLocation';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
@@ -36,7 +36,7 @@ export default function TelematicsScreen() {
 
   const refreshQueue = useCallback(async () => {
     const queue = await OfflineSyncEngine.getQueue();
-    setPending(queue.filter((a) => a.status !== 'COMPLETED' && a.status !== 'DEAD_LETTER').length);
+    setPending(queue.filter((a) => a.status !== SyncStatus.COMPLETED && a.status !== SyncStatus.DEAD_LETTER).length);
   }, []);
 
   const logPosition = useCallback(async () => {

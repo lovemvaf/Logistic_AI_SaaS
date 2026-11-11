@@ -488,7 +488,7 @@ export function createMockRepository(): MockRepository {
       if (!order) throw new MockApiError('Không tìm thấy đơn hàng.', 404);
 
       const product = findProductBySku(input.scannedSku);
-      const result = product
+      const result: MatchResult = product
         ? input.scannedSku === order.expectedSku
           ? 'MATCH'
           : 'MISMATCH'

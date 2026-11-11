@@ -224,10 +224,11 @@ function etaSteps(order: CustomerOrder): AiETAStep[] {
   ];
 }
 
-function etaDeliveryCourse(order: CustomerOrder) {
-  const deliveryAt = order.updatedAt;
-  const scheduled = new Date(order.scheduledDeliverAt);
-  const estimated = new Date(order.estimatedAt ?? order.scheduledDeliverAt);
+function etaDeliveryCourse(
+  order: CustomerOrder,
+): Omit<AiETAPrediction, 'trackingCode' | 'status' | 'steps'> {
+  const baseline = order.scheduledDeliverAt ?? order.updatedAt;
+  const scheduled = new Date(baseline);
 
   // Đơn đã giao: ETA là thời điểm thực tế.
   if (order.status === 'DELIVERED') {
@@ -235,7 +236,7 @@ function etaDeliveryCourse(order: CustomerOrder) {
     return {
       predictedAt: order.updatedAt,
       earliestAt: order.estimatedAt ?? order.updatedAt,
-      latestAt: order.scheduledDeliverAt,
+      latestAt: baseline,
       normalAt: order.estimatedAt ?? order.updatedAt,
       confidence: 100,
       delayRisk: deliveredAt > scheduled ? 'high' : 'none',
@@ -259,8 +260,8 @@ function etaDeliveryCourse(order: CustomerOrder) {
   }
 
   // Đơn đang chạy: cửa sổ dựa trên dịch vụ + khoảng thời gian còn lại.
-  const hoursLeft = hoursUntil(order.estimatedAt ?? order.scheduledDeliverAt);
-  const hoursFromNow = hoursUntil(order.scheduledDeliverAt);
+  const hoursLeft = hoursUntil(order.estimatedAt ?? baseline);
+  const hoursFromNow = hoursUntil(baseline);
   const onTime = hoursLeft >= -2;
 
   let confidence = 95;
@@ -288,10 +289,13 @@ function etaDeliveryCourse(order: CustomerOrder) {
   }
   if (!onTime) delayRisk = 'high';
 
+  const targetAt = order.estimatedAt ?? baseline;
+
   return {
-    predictedAt: order.estimatedAt ?? order.scheduledDeliverAt,
-    earliestAt: datePlus(order.scheduledDeliverAt, -hoursFromNow),
-    latestAt: datePlus(order.scheduledDeliverAt, +hoursFromNow + 8),
+    predictedAt: targetAt,
+    earliestAt: datePlus(baseline, -hoursFromNow),
+    latestAt: datePlus(baseline, +hoursFromNow + 8),
+    normalAt: targetAt,
     confidence,
     delayRisk,
     onTime,
@@ -723,7 +727,7 @@ export function createMockRepository(): MockRepository {
           throw new MockApiError('Số tiền vượt quá phần còn lại của hóa đơn.', 400);
         }
         const nextPaid = (invoice.paidAmount ?? 0) + payment;
-        const nextStatus = nextPaid >= invoice.totalAmount ? 'PAID' : 'PARTIAL';
+        const nextStatus = nextPaid >= invoice.totalAmount ? 'PAID' : 'SENT';
         await invoicesRepo.update(id, { status: nextStatus, paidAmount: nextPaid });
         return (await invoicesRepo.get(id)) as CustomerInvoice;
       },

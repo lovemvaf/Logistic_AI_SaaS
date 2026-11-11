@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import NetInfo from '@react-native-community/netinfo';
-import { OfflineSyncEngine, SyncResult } from '../lib/offline-sync';
+import { OfflineSyncEngine, SyncResult, SyncStatus } from '../lib/offline-sync';
 
 interface NetworkContextType {
   isOnline: boolean;
@@ -26,7 +26,7 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
 
   const refreshPendingCount = useCallback(async () => {
     const queue = await OfflineSyncEngine.getQueue();
-    setPendingCount(queue.filter(a => a.status !== 'COMPLETED').length);
+    setPendingCount(queue.filter(a => a.status !== SyncStatus.COMPLETED).length);
   }, []);
 
   const triggerSync = useCallback(async () => {

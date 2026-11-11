@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { data } from '@/lib/data';
+import type { ServiceLevel } from '@/lib/mock';
 import {
   EditorialPageHeader,
   EditorialSection,
@@ -62,6 +63,9 @@ export default function ClientOrdersPage() {
     event.preventDefault();
     setCreateError('');
     const form = event.target as HTMLFormElement;
+    const rawService = (form['service'] as HTMLSelectElement).value;
+    const service: ServiceLevel =
+      rawService === 'EXPRESS' || rawService === 'SAME_DAY' ? rawService : 'STANDARD';
     const input = {
       recipientName: (form['recipientName'] as HTMLInputElement).value,
       recipientPhone: (form['recipientPhone'] as HTMLInputElement).value,
@@ -71,7 +75,7 @@ export default function ClientOrdersPage() {
       weightKg: Number((form['weightKg'] as HTMLInputElement).value) || 0,
       codAmount: Number((form['codAmount'] as HTMLInputElement).value) || 0,
       shippingFee: Number((form['shippingFee'] as HTMLInputElement).value) || 15000,
-      service: (form['service'] as HTMLInputElement).value,
+      service,
       scheduledDeliverAt: (form['scheduledDeliverAt'] as HTMLInputElement).value,
     };
     try {

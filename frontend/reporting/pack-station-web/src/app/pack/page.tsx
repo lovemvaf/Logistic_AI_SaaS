@@ -403,7 +403,7 @@ export default function PackPage() {
     };
   }, [session]);
 
-  const station = stations.find((row) => row.id === session?.stationId) ?? { id: '-', code: '-', name: '-', status: 'OFFLINE' };
+  const station: PackStation = stations.find((row) => row.id === session?.stationId) ?? { id: '-', code: '-', name: '-', status: 'OFFLINE' };
 
   const isMatch = scanResult?.result === 'MATCH';
   const statusTone = scanError ? 'danger' : isMatch ? 'success' : sessionError ? 'danger' : selectedOrder ? 'info' : 'neutral';

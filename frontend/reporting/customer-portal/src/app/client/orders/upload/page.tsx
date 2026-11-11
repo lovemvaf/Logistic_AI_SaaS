@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from 'react';
 import { data } from '@/lib/data';
+import type { ServiceLevel } from '@/lib/mock';
 import {
   EditorialPageHeader,
   EditorialSection,
@@ -122,12 +123,17 @@ export default function ClientOrdersUpload() {
     try {
       const valid = rows.filter((row) => !row.error);
       for (const row of valid) {
+        const normalizedService = row.service?.trim().toUpperCase();
+        const service: ServiceLevel =
+          normalizedService === 'EXPRESS' || normalizedService === 'SAME_DAY'
+            ? normalizedService
+            : 'STANDARD';
         await data.orders.createOrder({
           clientOrderRef: row.clientOrderRef,
-          service: row.service || 'STANDARD',
-          recipientName: row.recipientName,
-          recipientPhone: row.recipientPhone,
-          recipientAddress: row.recipientAddress,
+          service,
+          recipientName: row.recipientName ?? '',
+          recipientPhone: row.recipientPhone ?? '',
+          recipientAddress: row.recipientAddress ?? '',
           itemCount: Number(row.itemCount) || 1,
           weightKg: Number(row.weightKg) || 1,
           codAmount: Number(row.codAmount) || 0,

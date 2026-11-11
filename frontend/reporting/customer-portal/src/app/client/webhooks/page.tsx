@@ -96,7 +96,14 @@ export default function ClientWebhooks() {
 
     setFormLoading(true);
     try {
-      await data.webhooks.create({ url, events });
+      await data.webhooks.create({
+        url,
+        events,
+        status: 'ACTIVE',
+        secretPrefix: 'whsec_demo',
+        successRate: 1,
+        lastDeliveryAt: null,
+      });
       setFormResult('Đã đăng ký webhook mới.');
       setUrl('');
       setEvents(['ALL_EVENTS']);
