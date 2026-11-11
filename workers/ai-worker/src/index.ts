@@ -2,6 +2,8 @@ import { Hono } from 'hono';
 import type { Bindings, Variables } from './env';
 import { auth, registerAdminRoutes } from './routes/admin';
 import { registerComputeRoutes, routingHandler } from './routes/compute';
+import { registerTradeDocumentRoutes } from './routes/trade-documents';
+import { registerHsCodeRoutes } from './routes/hs-code';
 import { SCHEMA_SQL } from './lib/schema';
 
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
@@ -33,6 +35,8 @@ aiApp.use('/routing/solve', auth);
 
 registerAdminRoutes(aiApp);
 registerComputeRoutes(aiApp);
+registerTradeDocumentRoutes(aiApp);
+registerHsCodeRoutes(aiApp);
 
 app.route('/ai', aiApp);
 app.route('/api/v1/ai', aiApp);

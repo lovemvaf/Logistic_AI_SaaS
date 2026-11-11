@@ -144,7 +144,12 @@ export const ROUTE_RULES: RouteRule[] = [
     mapPath: (path) => path.replace(/^\/api\/v1\/wms/, '/api/v1'),
   },
 
-  // --- Logistics ---
+  // --- Logistics & Enterprise Freight / Geography / Yard / Trade / Pricing ---
+  { prefix: '/api/v1/geography', service: 'core-api' },
+  { prefix: '/api/v1/freight', service: 'core-api' },
+  { prefix: '/api/v1/yard', service: 'core-api' },
+  { prefix: '/api/v1/trade', service: 'core-api' },
+  { prefix: '/api/v1/pricing', service: 'core-api' },
   { prefix: '/api/v1/logistics', service: 'core-api' },
   { prefix: '/api/v1/finance', service: 'core-api' },
   { prefix: '/api/v1/trips', service: 'core-api' },

@@ -52,6 +52,13 @@ describe('API Gateway Route Rules & Public Paths', () => {
     expect(matchRoute('/api/v1/reports/summary')?.service).toBe('core-api');
     expect(matchRoute('/api/v1/settings')?.service).toBe('core-api');
     expect(matchRoute('/api/v1/finance/cod')?.service).toBe('core-api');
+    expect(matchRoute('/api/v1/geography/units')?.service).toBe('core-api');
+    expect(matchRoute('/api/v1/freight/bookings')?.service).toBe('core-api');
+    expect(matchRoute('/api/v1/yard/gate-events')?.service).toBe('core-api');
+    expect(matchRoute('/api/v1/trade/declarations')?.service).toBe('core-api');
+    expect(matchRoute('/api/v1/pricing/dem-det-rules')?.service).toBe('core-api');
+    expect(matchRoute('/api/v1/client/freight/rfqs')?.service).toBe('core-api');
+    expect(PUBLIC_PATHS).toContain('/api/v1/public');
 
     const inboundRule = matchRoute('/api/v1/inbound/webhooks/deliver');
     expect(inboundRule?.service).toBe('webhook-service');

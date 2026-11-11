@@ -40,6 +40,16 @@ export const RolePermissionMap: Record<string, string[]> = {
     "returns:approve",
     "returns:inspect",
     "returns:refund",
+    "geography:read",
+    "freight:read",
+    "freight:manage",
+    "yard:read",
+    "yard:manage",
+    "trade:read",
+    "trade:approve",
+    "pricing:read",
+    "pricing:manage",
+    "tracking-grants:manage",
   ],
 
   [Roles.WAREHOUSE_MANAGER]: [
@@ -54,6 +64,10 @@ export const RolePermissionMap: Record<string, string[]> = {
     "users:read",
     "notifications:read",
     "pack-station:scan",
+    "geography:read",
+    "freight:read",
+    "yard:read",
+    "yard:manage",
   ],
 
   [Roles.WAREHOUSE_STAFF]: [
@@ -63,6 +77,8 @@ export const RolePermissionMap: Record<string, string[]> = {
     "mobile:sync:pull",
     "mobile:sync:push",
     "pack-station:scan",
+    "geography:read",
+    "yard:read",
   ],
 
   [Roles.LOGISTICS_MANAGER]: [
@@ -78,6 +94,14 @@ export const RolePermissionMap: Record<string, string[]> = {
     "returns:read",
     "returns:create",
     "returns:approve",
+    "geography:read",
+    "freight:read",
+    "freight:manage",
+    "yard:read",
+    "yard:manage",
+    "trade:read",
+    "pricing:read",
+    "tracking-grants:manage",
   ],
 
   [Roles.DRIVER]: [
@@ -96,6 +120,12 @@ export const RolePermissionMap: Record<string, string[]> = {
     "notifications:read",
     "returns:read",
     "returns:create",
+    "geography:read",
+    "freight:read",
+    "freight:manage",
+    "trade:read",
+    "pricing:read",
+    "tracking-grants:manage",
   ],
 
   [Roles.TENANT_USER]: [
@@ -103,5 +133,10 @@ export const RolePermissionMap: Record<string, string[]> = {
     "orders:read",
     "tasks:read",
     "trips:read",
+    "geography:read",
+    "freight:read",
+    "yard:read",
+    "trade:read",
+    "pricing:read",
   ],
 } as const

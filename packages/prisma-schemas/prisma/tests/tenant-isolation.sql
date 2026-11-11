@@ -30,7 +30,33 @@ DECLARE
     'feature_flags',
     'tenant_settings',
     'api_usage_daily',
-    'tenant_ui_configs'
+    'tenant_ui_configs',
+    'tractor_units',
+    'chassis_units',
+    'container_equipments',
+    'equipment_assignments',
+    'yards',
+    'yard_slots',
+    'container_gate_events',
+    'equipment_interchange_receipts',
+    'contract_rates',
+    'surcharge_rules',
+    'dem_det_rules',
+    'freight_rfqs',
+    'freight_quotes',
+    'quote_lines',
+    'freight_bookings',
+    'freight_shipments',
+    'freight_legs',
+    'freight_invoices',
+    'freight_ledger_entries',
+    'payment_allocations',
+    'dispute_cases',
+    'trade_documents',
+    'trade_document_versions',
+    'customs_declarations',
+    'customs_status_events',
+    'hs_code_suggestions'
   ];
   has_rls boolean;
   has_force boolean;
@@ -154,6 +180,16 @@ VALUES
   ('11111111-1111-4111-8111-aaaaaaaa0019', 'wh-a', '11111111-1111-4111-8111-111111111111', 'https://a.example.com/hook', 'order.created', 'DELIVERED'),
   ('22222222-2222-4222-8222-bbbbbbbb0019', 'wh-b', '22222222-2222-4222-8222-222222222222', 'https://b.example.com/hook', 'order.created', 'DELIVERED');
 
+INSERT INTO public."freight_bookings" ("id", "tenant_id", "booking_no", "service_mode", "status", "updated_at")
+VALUES
+  ('11111111-1111-4111-8111-aaaaaaaa0020', '11111111-1111-4111-8111-111111111111', 'BK-RLS-AAA1', 'FCL_EXPORT', 'CONFIRMED', now()),
+  ('22222222-2222-4222-8222-bbbbbbbb0020', '22222222-2222-4222-8222-222222222222', 'BK-RLS-BBB1', 'FCL_EXPORT', 'CONFIRMED', now());
+
+INSERT INTO public."customs_declarations" ("id", "tenant_id", "declaration_no", "direction", "channel", "port_code", "status", "updated_at")
+VALUES
+  ('11111111-1111-4111-8111-aaaaaaaa0021', '11111111-1111-4111-8111-111111111111', 'DEC-RLS-AAA1', 'EXPORT', 'GREEN', 'VNSGN', 'NEEDS_CUSTOMS_REVIEW', now()),
+  ('22222222-2222-4222-8222-bbbbbbbb0021', '22222222-2222-4222-8222-222222222222', 'DEC-RLS-BBB1', 'EXPORT', 'RED', 'VNSGN', 'NEEDS_CUSTOMS_REVIEW', now());
+
 -- 4. Drop bypass and enforce restricted role + Tenant A GUC
 SELECT set_config('app.bypass_rls', '', true);
 SET LOCAL ROLE smartlogi_app;
@@ -216,6 +252,14 @@ BEGIN
   SELECT count(*) INTO cnt FROM public.webhook_deliveries
    WHERE id IN ('11111111-1111-4111-8111-aaaaaaaa0019', '22222222-2222-4222-8222-bbbbbbbb0019');
   IF cnt <> 1 THEN RAISE EXCEPTION 'webhook_deliveries RLS failed: expected 1 row, got %', cnt; END IF;
+
+  SELECT count(*) INTO cnt FROM public.freight_bookings
+   WHERE id IN ('11111111-1111-4111-8111-aaaaaaaa0020', '22222222-2222-4222-8222-bbbbbbbb0020');
+  IF cnt <> 1 THEN RAISE EXCEPTION 'freight_bookings RLS failed: expected 1 row, got %', cnt; END IF;
+
+  SELECT count(*) INTO cnt FROM public.customs_declarations
+   WHERE id IN ('11111111-1111-4111-8111-aaaaaaaa0021', '22222222-2222-4222-8222-bbbbbbbb0021');
+  IF cnt <> 1 THEN RAISE EXCEPTION 'customs_declarations RLS failed: expected 1 row, got %', cnt; END IF;
 
   -- Cross-tenant UPDATE/DELETE must match 0 rows
   UPDATE public.orders

@@ -9,6 +9,7 @@ import { ClientWebhooksController } from './controllers/client-webhooks.controll
 import { ClientInvoicesController } from './controllers/client-invoices.controller';
 import { ClientReturnsController } from './controllers/client-returns.controller';
 import { ClientPortalController } from './controllers/client-portal.controller';
+import { ClientFreightController } from './controllers/client-freight.controller';
 
 /**
  * Module Customer: portal khách hàng + tra cứu công khai.
@@ -28,6 +29,7 @@ import { ClientPortalController } from './controllers/client-portal.controller';
     ClientInvoicesController,
     ClientReturnsController,
     ClientPortalController,
+    ClientFreightController,
   ],
 })
 export class CustomerModule {}

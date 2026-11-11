@@ -21,6 +21,11 @@ import { OrdersModule } from './modules/orders/orders.module';
 import { LogisticsModule } from './modules/logistics/logistics.module';
 import { CustomerModule } from './modules/customer/customer.module';
 import { NotificationModule } from './modules/notification/notification.module';
+import { GeographyModule } from './modules/geography/geography.module';
+import { YardModule } from './modules/yard/yard.module';
+import { PricingModule } from './modules/pricing/pricing.module';
+import { FreightModule } from './modules/freight/freight.module';
+import { TradeModule } from './modules/trade/trade.module';
 
 /**
  * core-api: modular monolith của SmartLogi.
@@ -54,6 +59,11 @@ import { NotificationModule } from './modules/notification/notification.module';
     LogisticsModule,
     CustomerModule,
     NotificationModule,
+    GeographyModule,
+    YardModule,
+    PricingModule,
+    FreightModule,
+    TradeModule,
   ],
   providers: [
     Reflector,

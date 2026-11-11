@@ -38,6 +38,17 @@ export const Permissions = {
   ReturnsInspect: "returns:inspect",
   ReturnsRefund: "returns:refund",
   TenantDashboardRead: "tenant-dashboard:read",
+  GeographyRead: "geography:read",
+  GeographyManage: "geography:manage",
+  FreightRead: "freight:read",
+  FreightManage: "freight:manage",
+  YardRead: "yard:read",
+  YardManage: "yard:manage",
+  TradeRead: "trade:read",
+  TradeApprove: "trade:approve",
+  PricingRead: "pricing:read",
+  PricingManage: "pricing:manage",
+  PublicTrackingGrantManage: "tracking-grants:manage",
 } as const
 
 export type Permission = (typeof Permissions)[keyof typeof Permissions]

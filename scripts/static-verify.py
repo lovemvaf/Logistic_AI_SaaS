@@ -90,6 +90,12 @@ INTERNAL_CLIENT_EXCLUDED_CONTROLLERS = {
     "wms/warehouses/branches.controller.ts",
     "wms/warehouses/warehouses.controller.ts",
     "wms/waves/waves.controller.ts",
+    "geography/controllers/geography.controller.ts",
+    "geography/controllers/geography-admin.controller.ts",
+    "freight/controllers/freight.controller.ts",
+    "yard/controllers/yard.controller.ts",
+    "pricing/controllers/pricing.controller.ts",
+    "trade/controllers/trade.controller.ts",
 }
 
 REQUIRED_DOCS = [
