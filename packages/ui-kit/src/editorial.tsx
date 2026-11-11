@@ -100,7 +100,7 @@ export function EditorialSection({
   className?: string;
 }) {
   return (
-    <section className={className}>
+    <section className={cx('min-w-0', className)}>
       <div className="flex items-end justify-between gap-3 border-b border-line pb-2">
         <div className="min-w-0">
           {eyebrow ? (

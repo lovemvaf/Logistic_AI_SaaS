@@ -35,6 +35,6 @@ const kafkaBrokers = process.env.KAFKA_BROKERS?.trim();
       : []),
   ],
   providers: [KafkaEventService],
-  exports: [KafkaEventService, ClientsModule],
+  exports: [KafkaEventService, ...(kafkaBrokers ? [ClientsModule] : [])],
 })
 export class KafkaModule {}

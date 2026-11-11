@@ -1,7 +1,7 @@
 name = "smartlogi-ai-worker"
 main = "src/index.ts"
 compatibility_date = "2025-01-01"
-account_id = ""                 # run `npx wrangler login` (or set CF_ACCOUNT_ID) to populate
+# Set via CLOUDFLARE_ACCOUNT_ID env var or run `npx wrangler login` before live deploy
 minify = true
 
 # Plain variables (non-secret). Exposed to the Worker as env.VAR_NAME.
@@ -17,15 +17,16 @@ DEFAULT_MODEL = "@cf/meta/llama-3.1-8b-instruct-fast"
 # JWT_SECRET          - HS256 secret used to verify caller JWTs (share with api-gateway/core-api).
 # AI_API_KEY          - shared key accepted for internal service-to-service calls (core-api -> Worker).
 
+# Zero-UUID placeholders allow `wrangler dev --local` and `wrangler deploy --dry-run` out of the box;
+# replace with real IDs from `wrangler d1 create` and `wrangler kv namespace create` for live deploy.
 [[d1_databases]]
 binding = "DB"
 database_name = "smartlogi-ai-meta"
-database_id = ""          # created by `npx wrangler d1 create smartlogi-ai-meta`
+database_id = "00000000-0000-0000-0000-000000000000"
 
 [[kv_namespaces]]
 binding = "CACHE"
-id = ""                   # created by `npx wrangler kv namespace create CACHE`
-preview_id = ""
+id = "00000000000000000000000000000000"
 
 [ai]
 binding = "AI"

@@ -119,6 +119,7 @@ export const RolePermissionMap: Record<string, string[]> = {
     "orders:read",
     "orders:create",
     "inventory:read",
+    "billing:read",
     "notifications:read",
     "returns:read",
     "returns:create",

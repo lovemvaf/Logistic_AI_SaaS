@@ -36,7 +36,7 @@ export class WarehousesController {
   constructor(private readonly prisma: PrismaService) {}
 
   @Get()
-  @RequirePermissions(Permissions.WarehousesManage)
+  @RequirePermissions(Permissions.InventoryRead)
   async list() {
     try {
       return await this.prisma.getTenantDb().warehouse.findMany({ 
@@ -49,7 +49,7 @@ export class WarehousesController {
   }
 
   @Get(":id")
-  @RequirePermissions(Permissions.WarehousesManage)
+  @RequirePermissions(Permissions.InventoryRead)
   async detail(@Param("id") id: string) {
     try {
       const warehouse = await this.prisma.getTenantDb().warehouse.findUnique({

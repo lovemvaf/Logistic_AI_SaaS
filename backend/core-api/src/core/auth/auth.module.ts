@@ -12,6 +12,10 @@ import { PrismaModule } from '../prisma/prisma.module';
  * Nghiệp vụ đăng nhập (đổi mật khẩu, quên mật khẩu, refresh token) nằm ở
  * module IAM, không nằm ở đây.
  */
+const googleOAuthEnabled = Boolean(
+  process.env.GOOGLE_CLIENT_ID?.trim() && process.env.GOOGLE_CLIENT_SECRET?.trim(),
+);
+
 @Module({
   imports: [
     PassportModule.register({ defaultStrategy: 'jwt' }),
@@ -21,7 +25,7 @@ import { PrismaModule } from '../prisma/prisma.module';
     }),
     PrismaModule,
   ],
-  providers: [JwtStrategy, GoogleStrategy],
-  exports: [PassportModule, JwtModule, JwtStrategy, GoogleStrategy],
+  providers: [JwtStrategy, ...(googleOAuthEnabled ? [GoogleStrategy] : [])],
+  exports: [PassportModule, JwtModule, JwtStrategy, ...(googleOAuthEnabled ? [GoogleStrategy] : [])],
 })
 export class CoreAuthModule {}

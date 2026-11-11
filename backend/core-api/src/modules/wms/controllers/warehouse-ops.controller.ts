@@ -281,14 +281,15 @@ export class WarehouseOpsController {
       ]);
     const sessionsToday = todayShifts.length;
     const nowMs = Date.now();
-    const totalShiftSeconds = todayShifts.reduce((sum: number, s: any) => {
+    const totalShiftMs = todayShifts.reduce((sum: number, s: any) => {
       const start = new Date(s.shiftStart).getTime();
       const end = s.shiftEnd ? new Date(s.shiftEnd).getTime() : nowMs;
-      return sum + Math.max(0, Math.round((end - start) / 1000));
+      return sum + Math.max(0, end - start);
     }, 0);
-    const averageSecondsPerPack = packedToday > 0 && totalShiftSeconds > 0
-      ? Math.round(totalShiftSeconds / packedToday)
-      : null;
+    const averageSecondsPerPack =
+      packedToday > 0 && todayShifts.length > 0
+        ? Math.max(1, Math.round(totalShiftMs / 1000 / packedToday))
+        : null;
     const matchRate = scansToday > 0 ? Math.round((matchedScansToday / scansToday) * 100) : 100;
     return {
       packedToday,

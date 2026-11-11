@@ -13,6 +13,11 @@ export function GoogleLoginButton({
   loading,
   fullWidth = true,
 }: GoogleLoginButtonProps) {
+  const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '';
+  if (!googleClientId) {
+    return null;
+  }
+
   return (
     <div className={fullWidth ? 'w-full' : ''}>
       <GoogleLogin

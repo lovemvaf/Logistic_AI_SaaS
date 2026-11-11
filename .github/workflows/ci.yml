@@ -2,9 +2,9 @@ name: SmartLogi CI
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, 'feat/**']
   pull_request:
-    branches: [main, master]
+    branches: [main, master, 'feat/**']
   workflow_dispatch:
 
 concurrency:
@@ -53,6 +53,7 @@ jobs:
           pnpm --filter ui-components build
           pnpm --filter ui-kit build
           pnpm --filter hardware-bridge build
+          pnpm --filter map-components build
           pnpm --filter offline-sync-engine build
           pnpm --filter prisma-schemas exec prisma generate
 
@@ -80,6 +81,17 @@ jobs:
           pnpm --filter pack-station-web exec next typegen
           pnpm --filter pack-station-web exec tsc --noEmit
           pnpm --filter driver-app exec tsc --noEmit
+
+      - name: Build all 4 Next.js web portals (API mode)
+        env:
+          NEXT_PUBLIC_DATA_SOURCE: api
+          API_INTERNAL_URL: http://127.0.0.1:3000
+          NEXT_PUBLIC_GOOGLE_CLIENT_ID: ''
+        run: |
+          pnpm --filter admin-portal build
+          pnpm --filter tenant-portal build
+          pnpm --filter customer-portal build
+          pnpm --filter pack-station-web build
 
   ai-worker:
     name: Cloudflare AI Worker Typecheck & Tests
@@ -247,3 +259,17 @@ jobs:
         run: |
           pnpm --filter prisma-schemas exec prisma migrate deploy
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f packages/prisma-schemas/prisma/tests/tenant-isolation.sql
+
+      - name: Verify idempotent Enterprise Demo Seed (Reset -> Seed -> Verify)
+        env:
+          DATABASE_URL: postgresql://postgres:ci_test_password@localhost:5432/smartlogi_test
+          ALLOW_DEMO_SEED: 'true'
+          SMARTLOGI_DEMO_MODE: 'true'
+          NODE_ENV: development
+        run: |
+          pnpm --filter shared-types build
+          pnpm --filter prisma-schemas exec prisma generate
+          pnpm demo:reset
+          pnpm db:seed:demo
+          pnpm demo:verify
+          pnpm demo:reset

@@ -223,7 +223,7 @@ export default function TenantLoginPage() {
             </button>
           </form>
 
-          {!isMockDataSource ? (
+          {!isMockDataSource && Boolean(process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID) ? (
             <div className="mt-6 space-y-3">
               <div className="flex items-center gap-3">
                 <span className="h-px flex-1 bg-line" />

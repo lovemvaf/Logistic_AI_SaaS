@@ -54,7 +54,7 @@ export async function seedRoles(prisma: PrismaClient, tenantId?: string) {
       'mobile:gps:batch', 'mobile:sos',
     ],
     CUSTOMER_CLIENT: [
-      'orders:read', 'orders:create', 'inventory:read', 'notifications:read', 'returns:read',
+      'orders:read', 'orders:create', 'inventory:read', 'billing:read', 'notifications:read', 'returns:read',
       'returns:create', 'geography:read', 'freight:read', 'freight:manage', 'trade:read',
       'pricing:read', 'tracking-grants:manage',
     ],

@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "pnpm --filter shared-types build && pnpm --filter ui-components build && pnpm --filter ui-kit build && pnpm --parallel --filter \"!shared-types\" --filter \"!ui-components\" --filter \"!ui-kit\" --filter \"!*-engine\" --filter \"!*-bridge\" --filter \"!*-components\" --filter \"!mobile-ui-kit\" --filter \"!prisma-schemas\" dev",
     "build": "pnpm -r --filter \"./packages/**\" --filter \"./backend/**\" --filter \"./api/**\" build",
-    "vercel-build": "pnpm --filter ui-components build && pnpm --filter ui-kit build && pnpm --filter admin-portal build && cp -r frontend/feature-test/admin-portal/.next .next",
+    "vercel-build": "pnpm --filter shared-types build && pnpm --filter ui-components build && pnpm --filter ui-kit build && pnpm --filter hardware-bridge build && pnpm --filter map-components build && pnpm --filter admin-portal build && pnpm --filter tenant-portal build && pnpm --filter customer-portal build && pnpm --filter pack-station-web build",
     "typecheck": "pnpm -r --filter \"./packages/**\" --filter \"./backend/**\" --filter \"./api/**\" exec tsc --noEmit",
     "test": "pnpm --filter api-gateway test",
     "db:migrate": "pnpm --filter prisma-schemas migrate:deploy",

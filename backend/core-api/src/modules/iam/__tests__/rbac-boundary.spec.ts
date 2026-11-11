@@ -12,9 +12,12 @@ import { AdminBillingController } from '../controllers/admin-billing.controller'
 import { AdminDashboardController } from '../controllers/admin-dashboard.controller';
 import { AdminAuditLogsController } from '../controllers/admin-audit-logs.controller';
 import { TenantAuditLogsController } from '../controllers/tenant-audit-logs.controller';
+import { TenantBillingController } from '../controllers/tenant-billing.controller';
+import { ClientInvoicesController } from '../../customer/controllers/client-invoices.controller';
 import { OrdersController } from '../../orders/controllers/orders.controller';
 import { ReturnsController } from '../../orders/controllers/returns.controller';
 import { WarehouseOpsController } from '../../wms/controllers/warehouse-ops.controller';
+import { WarehousesController } from '../../wms/warehouses/warehouses.controller';
 import { CodRemittancesController } from '../../logistics/controllers/cod-remittances.controller';
 
 function makeContext(
@@ -84,6 +87,20 @@ describe('RBAC Boundary Enforcement (PermissionsGuard + Controller Decorators)',
     ],
   };
 
+  const warehouseStaffUser = {
+    sub: 'user-wh-staff',
+    role: Roles.WAREHOUSE_STAFF,
+    tenant_id: 'tenant-1',
+    permissions: RolePermissionMap[Roles.WAREHOUSE_STAFF],
+  };
+
+  const defaultCustomerUser = {
+    sub: 'user-customer-default',
+    role: Roles.CUSTOMER_CLIENT,
+    tenant_id: 'tenant-1',
+    permissions: RolePermissionMap[Roles.CUSTOMER_CLIENT],
+  };
+
   describe('Platform Admin routes deny TENANT_ADMIN (even with shared or forged permissions)', () => {
     const adminRoutes: Array<[Function, string]> = [
       [AdminTenantsController, 'list'],
@@ -147,19 +164,45 @@ describe('RBAC Boundary Enforcement (PermissionsGuard + Controller Decorators)',
       [CodRemittancesController, 'approveRemittance'],
       [TenantAuditLogsController, 'list'],
       [TenantAuditLogsController, 'distinctActions'],
+      [TenantBillingController, 'getPlan'],
+      [TenantBillingController, 'getInvoices'],
+      [WarehousesController, 'list'],
+      [WarehousesController, 'detail'],
     ];
 
     it.each(internalRoutes)(
       'blocks CUSTOMER_CLIENT from internal route %p.%s',
       (ctrl, method) => {
         expect(guard.canActivate(makeContext(ctrl, method, customerClientUser))).toBe(false);
+        expect(guard.canActivate(makeContext(ctrl, method, defaultCustomerUser))).toBe(false);
       },
     );
 
-    it('still permits CUSTOMER_CLIENT to read reference return-reasons when licensed', () => {
+    it('still permits CUSTOMER_CLIENT to read reference return-reasons & self-service client invoices', () => {
       expect(
         guard.canActivate(makeContext(ReturnsController, 'listReturnReasons', customerClientUser)),
       ).toBe(true);
+      expect(
+        guard.canActivate(makeContext(ClientInvoicesController, 'list', defaultCustomerUser)),
+      ).toBe(true);
+      expect(
+        guard.canActivate(makeContext(ClientInvoicesController, 'pay', defaultCustomerUser)),
+      ).toBe(true);
+    });
+
+    it('allows WAREHOUSE_STAFF read-only access to warehouses while blocking mutations', () => {
+      expect(
+        guard.canActivate(makeContext(WarehousesController, 'list', warehouseStaffUser)),
+      ).toBe(true);
+      expect(
+        guard.canActivate(makeContext(WarehousesController, 'detail', warehouseStaffUser)),
+      ).toBe(true);
+      expect(
+        guard.canActivate(makeContext(WarehousesController, 'create', warehouseStaffUser)),
+      ).toBe(false);
+      expect(
+        guard.canActivate(makeContext(WarehousesController, 'update', warehouseStaffUser)),
+      ).toBe(false);
     });
   });
 
