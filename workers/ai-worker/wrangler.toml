@@ -1,0 +1,38 @@
+name = "smartlogi-ai-worker"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+account_id = ""                 # run `npx wrangler login` (or set CF_ACCOUNT_ID) to populate
+minify = true
+
+# Plain variables (non-secret). Exposed to the Worker as env.VAR_NAME.
+# CLOUDFLARE_MODEL (optional) overrides DEFAULT_MODEL for Workers AI — set it
+# in `.dev.vars` for local dev or as a Worker var/secret for prod (mirrors the
+# `CLOUDFLARE_MODEL` entry in the repo .env). Example:
+#   CLOUDFLARE_MODEL=@cf/meta/llama-3.1-8b-instruct-fast
+[vars]
+JWT_ALGORITHM = "HS256"
+DEFAULT_MODEL = "@cf/meta/llama-3.1-8b-instruct-fast"
+
+# --- Secrets (fill via: npx wrangler secret put <NAME> OR .dev.vars) ---
+# JWT_SECRET          - HS256 secret used to verify caller JWTs (share with api-gateway/core-api).
+# AI_API_KEY          - shared key accepted for internal service-to-service calls (core-api -> Worker).
+
+[[d1_databases]]
+binding = "DB"
+database_name = "smartlogi-ai-meta"
+database_id = ""          # created by `npx wrangler d1 create smartlogi-ai-meta`
+
+[[kv_namespaces]]
+binding = "CACHE"
+id = ""                   # created by `npx wrangler kv namespace create CACHE`
+preview_id = ""
+
+[ai]
+binding = "AI"
+
+[env.production.vars]
+DEFAULT_MODEL = "@cf/meta/llama-3.1-70b-instruct"
+
+[observability]
+enabled = true
+head_sampling_rate = 1

@@ -1,0 +1,20 @@
+{
+  "name": "shared-types",
+  "private": true,
+  "version": "0.1.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "dev": "echo 'shared-types ready'",
+    "build": "tsc"
+  },
+  "peerDependencies": {
+    "@nestjs/common": "10.3.10",
+    "@nestjs/core": "10.3.10"
+  },
+  "devDependencies": {
+    "@nestjs/common": "10.3.10",
+    "@nestjs/core": "10.3.10",
+    "typescript": "^5.5.3"
+  }
+}

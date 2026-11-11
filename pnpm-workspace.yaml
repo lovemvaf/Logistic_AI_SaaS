@@ -1,0 +1,7 @@
+packages:
+  - "frontend/feature-test/*"
+  - "frontend/reporting/*"
+  - "frontend/mobile/*"
+  - "backend/*"
+  - "api/*"
+  - "packages/*"

@@ -1,0 +1,75 @@
+# Dependency directories
+node_modules/
+**/node_modules/
+
+# Next.js build output
+.next/
+**/.next/
+
+# Backend build output
+dist/
+**/dist/
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+**/.env*
+!.env.example
+!**/.env.example
+# Wrangler local secrets (never commit)
+**/.dev.vars
+**/.wrangler/
+
+# AI Models (Heavy files)
+models/*.joblib
+models/*.h5
+models/*.json
+services/ai-service/models/
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# IDE settings
+.vscode/
+.idea/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Prisma generated assets (keep schema, ignore client)
+/packages/prisma-schemas/node_modules/
+
+# Local databases
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+#Docs
+# /docs
+
+/Pagetemp
+/Video
+/DesignSYS
+#Main
+#/.github
+# Playwright CLI output (may contain credentials)
+.playwright-cli/
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# TypeScript incremental build cache
+*.tsbuildinfo
+
+# Test coverage & stray root screenshots
+coverage/
+admin-login.png

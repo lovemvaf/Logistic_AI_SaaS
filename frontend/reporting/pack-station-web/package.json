@@ -1,0 +1,33 @@
+{
+  "name": "pack-station-web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 4004",
+    "build": "next build",
+    "start": "next start -p 4004"
+  },
+  "dependencies": {
+    "@react-oauth/google": "^0.13.5",
+    "@tensorflow-models/mobilenet": "^2.1.1",
+    "@tensorflow/tfjs": "^4.20.0",
+    "@tensorflow/tfjs-backend-wasm": "^4.20.0",
+    "axios": "^1.16.1",
+    "clsx": "^2.1.0",
+    "next": "15.5.28",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "ui-components": "workspace:*",
+    "ui-kit": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "@types/react": "19.0.0",
+    "@types/react-dom": "19.0.0",
+    "autoprefixer": "^10.4.20",
+    "eslint-config-next": "15.5.28",
+    "postcss": "^8",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5"
+  }
+}

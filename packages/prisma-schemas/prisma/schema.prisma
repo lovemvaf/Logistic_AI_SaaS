@@ -1,0 +1,1486 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// Outbox pattern: sự kiện nghiệp vụ được ghi cùng transaction với thay đổi
+/// dữ liệu, sau đó một worker gửi đi (Kafka / webhook). Nhờ vậy không còn
+/// trường hợp "đơn hàng đã tạo nhưng event chưa phát" hoặc ngược lại.
+///
+/// Bảng này thuộc lớp platform (đọc/ghi xuyên tenant) nên không bật RLS.
+model OutboxEvent {
+  id          String    @id @default(uuid())
+  tenantId    String?   @map("tenant_id")
+  /// Kênh gửi: KAFKA | WEBHOOK
+  channel     String
+  /// Tên topic/event, ví dụ `order.created`
+  topic       String
+  payload     Json
+  /// PENDING | PROCESSING | SENT | FAILED
+  status      String    @default("PENDING")
+  attempts    Int       @default(0)
+  lastError   String?   @map("last_error")
+  /// Thời điểm sớm nhất được gửi lại (backoff khi thất bại)
+  availableAt DateTime  @default(now()) @map("available_at")
+  processedAt DateTime? @map("processed_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@index([status, availableAt])
+  @@index([tenantId])
+  @@index([topic])
+  @@map("outbox_events")
+}
+
+model Tenant {
+  id                String            @id @default(uuid())
+  name              String
+  slug              String            @unique
+  logoUrl           String?           @map("logo_url")
+  planId            String?           @map("plan_id")
+  plan              SubscriptionPlan? @relation(fields: [planId], references: [id])
+  dbSchemaName      String            @unique @map("db_schema_name")
+  status            String            @default("PENDING")
+  maxUsers          Int               @default(10) @map("max_users")
+  maxWarehouses     Int               @default(3) @map("max_warehouses")
+  maxVehicles       Int               @default(10) @map("max_vehicles")
+  maxApiCallsPerDay Int               @default(10000) @map("max_api_calls_per_day")
+  settingsJson      String            @default("{}") @map("settings_json")
+  createdAt         DateTime          @default(now()) @map("created_at")
+  syncVersion       Int               @default(1) @map("sync_version")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+  deletedAt         DateTime?         @map("deleted_at")
+
+  apiKeys             TenantApiKey[]
+  featureFlags        FeatureFlag[]
+  settings            TenantSetting[]
+  invoices            Invoice[]
+  paymentTransactions PaymentTransaction[]
+  apiUsageDaily       ApiUsageDaily[]
+  uiConfig            TenantUiConfig?
+}
+
+model SubscriptionPlan {
+  id            String   @id @default(uuid())
+  name          String
+  code          String   @unique
+  priceMonthly  Decimal  @map("price_monthly")
+  maxUsers      Int      @map("max_users")
+  maxWarehouses Int      @map("max_warehouses")
+  maxVehicles   Int      @map("max_vehicles")
+  featuresJson  String   @default("{}") @map("features_json")
+  priceCurrency String   @default("USD") @map("price_currency")
+  description   String?  @map("description")
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  tenants Tenant[]
+
+  @@map("subscription_plans")
+}
+
+model SystemAuditLog {
+  id           String   @id @default(uuid())
+  tenantId     String?  @map("tenant_id")
+  actorId      String   @map("actor_id")
+  actorEmail   String   @map("actor_email")
+  action       String
+  resourceType String   @map("resource_type")
+  resourceId   String?  @map("resource_id")
+  oldValues    String?  @map("old_values")
+  newValues    String?  @map("new_values")
+  ipAddress    String   @map("ip_address")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId])
+  @@index([actorId])
+  @@index([resourceType])
+  @@index([createdAt])
+  @@map("system_audit_logs")
+}
+
+model SystemAdmin {
+  id               String    @id @default(uuid())
+  email            String    @unique
+  passwordHash     String    @map("password_hash")
+  fullName         String    @map("full_name")
+  status           String    @default("ACTIVE")
+  resetToken       String?   @map("reset_token")
+  resetTokenExpiry DateTime? @map("reset_token_expiry")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  @@map("system_admins")
+}
+
+model TenantUser {
+  id               String    @id @default(uuid())
+  tenantId         String    @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  email            String
+  passwordHash     String    @map("password_hash")
+  fullName         String    @map("full_name")
+  phone            String?
+  avatarUrl        String?   @map("avatar_url")
+  status           String    @default("ACTIVE")
+  lastLogin        DateTime? @map("last_login")
+  resetToken       String?   @map("reset_token")
+  resetTokenExpiry DateTime? @map("reset_token_expiry")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  syncVersion      Int       @default(1) @map("sync_version")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+  deletedAt        DateTime? @map("deleted_at")
+
+  roles             UserRole[]
+  Branch            Branch[]
+  Warehouse         Warehouse[]
+  Task              Task[]
+  Driver            Driver?
+  CycleCount        CycleCount[]
+  Adjustment        Adjustment[]
+  ScanLog           ScanLog[]
+  StockMovement     StockMovement[]
+  StaffShift        StaffShift[]
+  EquipmentCheckout EquipmentCheckout[]
+
+  @@unique([tenantId, email])
+  @@index([status])
+  @@index([createdAt])
+  @@index([phone])
+  @@index([tenantId])
+  @@map("tenant_users")
+}
+
+model CustomRole {
+  id              String    @id @default(uuid())
+  tenantId        String    @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  name            String
+  isSystemDefault Boolean   @default(false) @map("is_system_default")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  deletedAt       DateTime? @map("deleted_at")
+
+  permissions RolePermission[]
+  users       UserRole[]
+
+  @@index([tenantId])
+  @@map("custom_roles")
+}
+
+model RolePermission {
+  tenantId String @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  roleId   String @map("role_id")
+  resource String
+  action   String
+
+  role CustomRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, resource, action])
+  @@index([tenantId])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  tenantId String @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  userId   String @map("user_id")
+  roleId   String @map("role_id")
+
+  user TenantUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role CustomRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@index([tenantId])
+  @@map("user_roles")
+}
+
+model Branch {
+  id          String    @id @default(uuid())
+  tenantId    String    @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  type        String
+  code        String
+  name        String
+  address     String
+  lat         Decimal?
+  lng         Decimal?
+  capacityCbm Decimal?  @map("capacity_cbm")
+  managerId   String?   @map("manager_id")
+  status      String    @default("ACTIVE")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  manager TenantUser? @relation(fields: [managerId], references: [id])
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("branches")
+}
+
+model Warehouse {
+  id        String    @id @default(uuid())
+  tenantId  String    @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  name      String
+  code      String
+  address   String
+  status    String    @default("ACTIVE")
+  managerId String?   @map("manager_id")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  manager           TenantUser?         @relation(fields: [managerId], references: [id])
+  zones             Zone[]
+  Bin               Bin[]
+  Inventory         Inventory[]
+  StockMovement     StockMovement[]
+  WavePicking       WavePicking[]
+  Task              Task[]
+  CycleCount        CycleCount[]
+  Adjustment        Adjustment[]
+  ScanLog           ScanLog[]
+  PackStationLog    PackStationLog[]
+  StaffShift        StaffShift[]
+  EquipmentCheckout EquipmentCheckout[]
+
+  @@unique([tenantId, code])
+  @@index([status])
+  @@index([managerId])
+  @@index([tenantId])
+  @@map("warehouses")
+}
+
+model Zone {
+  id          String   @id @default(uuid())
+  tenantId    String   @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  warehouseId String   @map("warehouse_id")
+  code        String
+  type        String
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id])
+  racks     Rack[]
+
+  @@unique([warehouseId, code])
+  @@index([tenantId])
+  @@map("zones")
+}
+
+model Rack {
+  id        String   @id @default(uuid())
+  tenantId  String   @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  zoneId    String   @map("zone_id")
+  code      String
+  aisle     String
+  rows      Int
+  levels    Int
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  zone Zone  @relation(fields: [zoneId], references: [id])
+  bins Bin[]
+
+  @@unique([zoneId, code])
+  @@index([tenantId])
+  @@map("racks")
+}
+
+model Bin {
+  id           String   @id @default(uuid())
+  tenantId     String   @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  rackId       String   @map("rack_id")
+  warehouseId  String   @map("warehouse_id")
+  barcode      String
+  rowIndex     Int      @map("row_index")
+  levelIndex   Int      @map("level_index")
+  maxWeightKg  Decimal  @default(1000) @map("max_weight_kg")
+  maxVolumeCbm Decimal  @default(1.5) @map("max_volume_cbm")
+  posX         Int?     @map("pos_x")
+  posY         Int?     @map("pos_y")
+  posZ         Int?     @map("pos_z")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  rack      Rack        @relation(fields: [rackId], references: [id])
+  warehouse Warehouse   @relation(fields: [warehouseId], references: [id])
+  inventory Inventory[]
+
+  @@unique([tenantId, barcode])
+  @@index([rackId])
+  @@index([warehouseId])
+  @@index([tenantId])
+  @@map("bins")
+}
+
+model Category {
+  id        String   @id @default(uuid())
+  tenantId  String   @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  name      String
+  parentId  String?  @map("parent_id")
+  slug      String
+  icon      String?
+  sortOrder Int      @default(0) @map("sort_order")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id])
+  children Category[] @relation("CategoryTree")
+  products Product[]
+
+  @@unique([tenantId, slug])
+  @@index([tenantId])
+  @@map("categories")
+}
+
+model Product {
+  id          String    @id @default(uuid())
+  tenantId    String    @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  sku         String
+  name        String
+  barcode     String?
+  categoryId  String?   @map("category_id")
+  weightKg    Decimal   @default(0) @map("weight_kg")
+  volumeCbm   Decimal   @default(0) @map("volume_cbm")
+  description String?
+  imageUrl    String?   @map("image_url")
+  status      String    @default("ACTIVE")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  category        Category?        @relation(fields: [categoryId], references: [id])
+  inventory       Inventory[]
+  orderItems      OrderItem[]
+  Task            Task[]
+  TaskItem        TaskItem[]
+  demandForecasts DemandForecast[]
+
+  @@unique([tenantId, sku])
+  @@unique([tenantId, barcode])
+  @@index([categoryId])
+  @@index([status])
+  @@index([tenantId])
+  @@map("products")
+}
+
+model Inventory {
+  id                String    @id @default(uuid())
+  tenantId          String    @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  warehouseId       String    @map("warehouse_id")
+  binId             String    @map("bin_id")
+  productId         String    @map("product_id")
+  batchNumber       String?   @map("batch_number")
+  expiryDate        DateTime? @map("expiry_date")
+  lpn               String?
+  quantityOnHand    Int       @default(0) @map("quantity_on_hand")
+  quantityAllocated Int       @default(0) @map("quantity_allocated")
+  status            String    @default("AVAILABLE")
+  version           Int       @default(1)
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  warehouse  Warehouse       @relation(fields: [warehouseId], references: [id])
+  bin        Bin             @relation(fields: [binId], references: [id])
+  product    Product         @relation(fields: [productId], references: [id])
+  movements  StockMovement[]
+  Adjustment Adjustment[]
+
+  @@unique([binId, productId, batchNumber, lpn])
+  @@index([warehouseId])
+  @@index([productId])
+  @@index([warehouseId, productId])
+  @@index([tenantId])
+  @@map("inventory")
+}
+
+model StockMovement {
+  id                String   @id @default(uuid())
+  tenantId          String   @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  inventoryId       String   @map("inventory_id")
+  warehouseId       String   @map("warehouse_id")
+  transactionType   String   @map("transaction_type")
+  quantityChange    Int      @map("quantity_change")
+  balanceAfter      Int      @map("balance_after")
+  referenceDocument String?  @map("reference_document")
+  reasonCode        String?  @map("reason_code")
+  actorId           String   @map("actor_id")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  inventory Inventory   @relation(fields: [inventoryId], references: [id])
+  warehouse Warehouse   @relation(fields: [warehouseId], references: [id])
+  actor     TenantUser? @relation(fields: [actorId], references: [id])
+
+  @@index([warehouseId])
+  @@index([inventoryId])
+  @@index([createdAt])
+  @@index([inventoryId, createdAt])
+  @@index([tenantId])
+  @@map("stock_movements")
+}
+
+model WavePicking {
+  id          String    @id @default(uuid())
+  tenantId    String    @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  warehouseId String    @map("warehouse_id")
+  waveNumber  String @map("wave_number")
+  status      String    @default("NEW")
+  totalOrders Int       @default(0) @map("total_orders")
+  totalItems  Int       @default(0) @map("total_items")
+  createdBy   String    @map("created_by")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id])
+  tasks     Task[]
+
+  @@unique([tenantId, waveNumber])
+  @@index([warehouseId])
+  @@index([status])
+  @@index([tenantId])
+  @@map("wave_picking")
+}
+
+model Task {
+  id                String    @id @default(uuid())
+  tenantId          String    @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  warehouseId       String    @map("warehouse_id")
+  taskType          String    @map("task_type")
+  status            String    @default("PENDING")
+  priority          Int       @default(0)
+  assigneeId        String?   @map("assignee_id")
+  sourceBinId       String?   @map("source_bin_id")
+  targetBinId       String?   @map("target_bin_id")
+  productId         String    @map("product_id")
+  quantityRequested Int       @map("quantity_requested")
+  quantityActual    Int?      @map("quantity_actual")
+  waveId            String?   @map("wave_id")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+  deletedAt         DateTime? @map("deleted_at")
+
+  warehouse Warehouse    @relation(fields: [warehouseId], references: [id])
+  assignee  TenantUser?  @relation(fields: [assigneeId], references: [id])
+  product   Product      @relation(fields: [productId], references: [id])
+  wave      WavePicking? @relation(fields: [waveId], references: [id])
+  TaskItem  TaskItem[]
+  ScanLog   ScanLog[]
+
+  @@index([warehouseId])
+  @@index([assigneeId])
+  @@index([status])
+  @@index([productId])
+  @@index([tenantId])
+  @@map("tasks")
+}
+
+model Client {
+  id        String    @id @default(uuid())
+  tenantId  String    @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  name      String
+  status    String    @default("ACTIVE")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  users    ClientUser[]
+  orders   Order[]
+  webhooks ClientWebhook[]
+  apiKeys  ClientApiKey[]
+  invoices Invoice[]
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([tenantId])
+  @@map("clients")
+}
+
+model ClientUser {
+  id        String   @id @default(uuid())
+  tenantId  String   @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  clientId  String   @map("client_id")
+  email     String
+  fullName  String   @map("full_name")
+  phone     String?
+  status    String   @default("ACTIVE")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  client Client @relation(fields: [clientId], references: [id])
+
+  @@index([clientId])
+  @@index([email])
+  @@index([tenantId])
+  @@map("client_users")
+}
+
+model Order {
+  id                    String    @id @default(uuid())
+  tenantId              String    @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  trackingCode          String    @unique @map("tracking_code")
+  clientId              String?   @map("client_id")
+  clientOrderRef        String?   @map("client_order_ref")
+  status                String
+  recipientName         String    @map("recipient_name")
+  recipientPhone        String    @map("recipient_phone")
+  recipientAddress      String    @map("recipient_address")
+  lat                   Decimal?
+  lng                   Decimal?
+  codAmount             Decimal   @default(0) @map("cod_amount")
+  shippingFee           Decimal   @map("shipping_fee")
+  notes                 String?
+  cancelledReason       String?   @map("cancelled_reason")
+  returnStatus          String?   @map("return_status")
+  returnPolicy          String?   @map("return_policy")
+  returnEligibleUntil   DateTime? @map("return_eligible_until")
+  podImageUrl           String?   @map("pod_image_url")
+  driverId              String?   @map("driver_id")
+  estimatedDeliveryDate DateTime? @map("estimated_delivery_date")
+  actualDeliveryTime    DateTime? @map("actual_delivery_time")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+  deletedAt             DateTime? @map("deleted_at")
+
+  client         Client?              @relation(fields: [clientId], references: [id])
+  driver         Driver?              @relation(fields: [driverId], references: [id])
+  items          OrderItem[]
+  events         OrderTrackingEvent[]
+  PackStationLog PackStationLog[]
+  deliveries     Delivery[]
+  tripStops      TripStop[]
+  returnRequests ReturnRequest[]
+
+  @@index([clientId])
+  @@index([status])
+  @@index([driverId])
+  @@index([createdAt])
+  @@index([trackingCode])
+  @@index([recipientPhone])
+  @@index([clientId, status])
+  @@index([tenantId])
+  @@map("orders")
+}
+
+model OrderItem {
+  id               String   @id @default(uuid())
+  tenantId         String   @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  orderId          String   @map("order_id")
+  productId        String   @map("product_id")
+  quantity         Int
+  returnedQuantity Int      @default(0) @map("returned_quantity")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  order   Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product      @relation(fields: [productId], references: [id])
+  returns ReturnItem[]
+
+  @@index([orderId])
+  @@index([tenantId])
+  @@map("order_items")
+}
+
+model OrderTrackingEvent {
+  id          String   @default(uuid())
+  tenantId    String   @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  orderId     String   @map("order_id")
+  status      String
+  location    String?
+  description String
+  timestamp   DateTime @default(now())
+  feedbackId  String?  @map("feedback_id")
+
+  order    Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  feedback AiFeedback? @relation(fields: [feedbackId], references: [id])
+
+  @@id([id, timestamp])
+  @@index([orderId])
+  @@index([status])
+  @@index([tenantId])
+  @@map("order_tracking_events")
+}
+
+model AiModel {
+  id        String    @id @default(uuid())
+  tenantId  String    @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  name      String
+  version   String
+  type      String
+  accuracy  Decimal?
+  modelPath String    @map("model_path")
+  isCurrent Boolean   @default(false) @map("is_current")
+  trainedAt DateTime  @default(now()) @map("trained_at")
+  metadata  String?
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([type])
+  @@index([isCurrent])
+  @@index([tenantId])
+  @@map("ai_models")
+}
+
+model AiFeedback {
+  id             String   @id @default(uuid())
+  tenantId       String   @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  modelId        String   @map("model_id")
+  resourceType   String   @map("resource_type")
+  resourceId     String   @map("resource_id")
+  aiPrediction   String   @map("ai_prediction")
+  humanCorrected String   @map("human_corrected")
+  confidence     Decimal?
+  isUsedForTrain Boolean  @default(false) @map("is_used_for_train")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  OrderTrackingEvent OrderTrackingEvent[]
+
+  @@index([modelId])
+  @@index([resourceType, resourceId])
+  @@index([isUsedForTrain])
+  @@index([tenantId])
+  @@map("ai_feedbacks")
+}
+
+model DemandForecast {
+  id             String   @id @default(uuid())
+  tenantId       String   @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  productId      String   @map("product_id")
+  forecastDate   DateTime @map("forecast_date")
+  demandQuantity Int      @map("demand_quantity")
+  modelVersion   String   @map("model_version")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([productId])
+  @@index([forecastDate])
+  @@index([productId, forecastDate])
+  @@index([tenantId])
+  @@map("demand_forecasts")
+}
+
+model ClientWebhook {
+  id          String    @id @default(uuid())
+  tenantId    String    @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  clientId    String    @map("client_id")
+  url         String
+  events      String
+  secretToken String?   @map("secret_token")
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  client Client @relation(fields: [clientId], references: [id])
+
+  @@index([clientId])
+  @@index([isActive])
+  @@index([tenantId])
+  @@map("client_webhooks")
+}
+
+model Vehicle {
+  id          String    @id @default(uuid())
+  tenantId    String    @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  plateNumber String @map("plate_number")
+  type        String
+  capacityKg  Decimal   @default(0) @map("capacity_kg")
+  capacityCbm Decimal   @default(0) @map("capacity_cbm")
+  status      String    @default("ACTIVE")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  trips Trip[]
+
+  @@unique([tenantId, plateNumber])
+  @@index([status])
+  @@index([plateNumber])
+  @@index([tenantId])
+  @@map("vehicles")
+}
+
+model Driver {
+  id                String                                @id @default(uuid())
+  tenantId          String                                @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  userId            String                                @unique @map("user_id")
+  licenseClass      String                                @map("license_class")
+  licenseExpiry     DateTime                              @map("license_expiry")
+  status            String                                @default("OFFLINE")
+  lastKnownLocation Unsupported("geometry(Point, 4326)")? @map("last_known_location")
+  locationUpdatedAt DateTime?                             @map("location_updated_at")
+  createdAt         DateTime                              @default(now()) @map("created_at")
+  updatedAt         DateTime                              @updatedAt @map("updated_at")
+  deletedAt         DateTime?                             @map("deleted_at")
+
+  user           TenantUser       @relation(fields: [userId], references: [id])
+  trips          Trip[]
+  orders         Order[]
+  deliveries     Delivery[]
+  codRemittances CodRemittance[]
+  expenses       DriverExpense[]
+  SosAlert       SosAlert[]
+  GpsTrackingLog GpsTrackingLog[]
+  pickupReturns  ReturnRequest[]
+
+  @@index([status])
+  @@index([userId])
+  @@index([createdAt])
+  @@index([tenantId])
+  @@index([lastKnownLocation], type: Gist)
+  @@map("drivers")
+}
+
+model Trip {
+  id                   String    @id @default(uuid())
+  tenantId             String    @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  tripCode             String @map("trip_code")
+  vehicleId            String?   @map("vehicle_id")
+  driverId             String?   @map("driver_id")
+  status               String    @default("DRAFT")
+  plannedRouteGeometry String?   @map("planned_route_geometry")
+  actualRouteGeometry  String?   @map("actual_route_geometry")
+  totalWeightKg        Decimal   @default(0) @map("total_weight_kg")
+  totalVolumeCbm       Decimal   @default(0) @map("total_volume_cbm")
+  estimatedDistanceKm  Decimal?  @map("estimated_distance_km")
+  actualDistanceKm     Decimal?  @map("actual_distance_km")
+  aiOptimized          Boolean   @default(false) @map("ai_optimized")
+  departureTime        DateTime? @map("departure_time")
+  returnTime           DateTime? @map("return_time")
+  metadata             String?
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+  syncVersion          Int       @default(1) @map("sync_version")
+
+  vehicle          Vehicle?         @relation(fields: [vehicleId], references: [id])
+  driver           Driver?          @relation(fields: [driverId], references: [id])
+  stops            TripStop[]
+  deliveries       Delivery[]       @relation("DeliveryTrips")
+  returnDeliveries Delivery[]       @relation("ReturnTrips")
+  DriverExpense    DriverExpense[]
+  SosAlert         SosAlert[]
+  GpsTrackingLog   GpsTrackingLog[]
+  returnRequests   ReturnRequest[]  @relation("PickupTrip")
+
+  @@unique([tenantId, tripCode])
+  @@index([driverId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([driverId, status])
+  @@index([status, createdAt])
+  @@index([tenantId])
+  @@map("trips")
+}
+
+model TripStop {
+  id                String    @id @default(uuid())
+  tenantId          String    @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  tripId            String    @map("trip_id")
+  orderId           String?   @map("order_id")
+  stopType          String    @map("stop_type")
+  sequence          Int
+  location          String?   @map("location")
+  address           String
+  status            String    @default("PENDING")
+  plannedEta        DateTime? @map("planned_eta")
+  actualArrivalTime DateTime? @map("actual_arrival_time")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  trip  Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  order Order? @relation(fields: [orderId], references: [id])
+
+  @@unique([tripId, sequence])
+  @@index([tenantId])
+  @@map("trip_stops")
+}
+
+model Delivery {
+  id                 String    @id @default(uuid())
+  tenantId           String    @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  tripId             String    @map("trip_id")
+  orderId            String    @map("order_id")
+  stopSequence       Int       @map("stop_sequence")
+  stopType           String    @map("stop_type")
+  status             String
+  returnTripId       String?   @map("return_trip_id")
+  customerName       String    @map("customer_name")
+  customerPhone      String    @map("customer_phone")
+  deliveryAddress    String    @map("delivery_address")
+  lat                Decimal
+  lng                Decimal
+  codAmountExpected  Decimal   @default(0) @map("cod_amount_expected")
+  codAmountCollected Decimal   @default(0) @map("cod_amount_collected")
+  podImageUrl        String?   @map("pod_image_url")
+  podSignatureUrl    String?   @map("pod_signature_url")
+  checkinLat         Decimal?  @map("checkin_lat")
+  checkinLng         Decimal?  @map("checkin_lng")
+  syncVersion        Int       @default(1) @map("sync_version")
+  driverId           String?   @map("driver_id")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+  deletedAt          DateTime? @map("deleted_at")
+
+  trip       Trip    @relation("DeliveryTrips", fields: [tripId], references: [id], onDelete: Cascade)
+  returnTrip Trip?   @relation("ReturnTrips", fields: [returnTripId], references: [id])
+  order      Order   @relation(fields: [orderId], references: [id])
+  driver     Driver? @relation(fields: [driverId], references: [id])
+
+  @@index([tripId])
+  @@index([orderId])
+  @@index([driverId])
+  @@index([status])
+  @@index([orderId, status])
+  @@index([driverId, status])
+  @@index([tenantId])
+  @@map("deliveries")
+}
+
+model DriverExpense {
+  id              String   @id @default(uuid())
+  tenantId        String   @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  driverId        String   @map("driver_id")
+  tripId          String?  @map("trip_id")
+  amount          Decimal
+  category        String
+  note            String?
+  receiptImageUrl String?  @map("receipt_image_url")
+  fuelCost        Decimal? @map("fuel_cost")
+  status          String   @default("PENDING")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  syncVersion     Int      @default(1) @map("sync_version")
+
+  driver Driver @relation(fields: [driverId], references: [id])
+  trip   Trip?  @relation(fields: [tripId], references: [id])
+
+  @@index([driverId])
+  @@index([tripId])
+  @@index([status])
+  @@index([tenantId])
+  @@map("driver_expenses")
+}
+
+model CodRemittance {
+  id                    String   @id @default(uuid())
+  tenantId              String   @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  driverId              String   @map("driver_id")
+  totalCodCollected     Decimal  @map("total_cod_collected")
+  totalExpensesDeducted Decimal  @default(0) @map("total_expenses_deducted")
+  amountRemitted        Decimal  @map("amount_remitted")
+  status                String   @default("PENDING")
+  qrCodeToken           String?  @map("qr_code_token")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  driver Driver @relation(fields: [driverId], references: [id])
+
+  @@index([driverId])
+  @@index([status])
+  @@index([tenantId])
+  @@map("cod_remittances")
+}
+
+model SosAlert {
+  id        String   @id @default(uuid())
+  tenantId  String   @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  driverId  String   @map("driver_id")
+  tripId    String?  @map("trip_id")
+  message   String?
+  status    String   @default("OPEN")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  driver Driver @relation(fields: [driverId], references: [id])
+  trip   Trip?  @relation(fields: [tripId], references: [id])
+
+  @@index([driverId])
+  @@index([status])
+  @@index([tenantId])
+  @@map("sos_alerts")
+}
+
+model RouteOptimizationJob {
+  id          String    @id @default(uuid())
+  tenantId    String    @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  status      String    @default("PENDING")
+  payload     String
+  result      String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+  completedAt DateTime? @map("completed_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([tenantId])
+  @@map("route_optimization_jobs")
+}
+
+model Geofence {
+  id        String                                  @id @default(uuid())
+  tenantId  String                                  @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  name      String
+  polygon   Unsupported("geometry(Polygon, 4326)")? @map("polygon")
+  zoneType  String                                  @map("zone_type")
+  isActive  Boolean                                 @default(true) @map("is_active")
+  createdAt DateTime                                @default(now()) @map("created_at")
+  updatedAt DateTime                                @updatedAt @map("updated_at")
+  deletedAt DateTime?                               @map("deleted_at")
+
+  @@index([isActive])
+  @@index([zoneType])
+  @@index([tenantId])
+  @@index([polygon], type: Gist)
+  @@map("geofences")
+}
+
+model GpsTrackingLog {
+  id              String   @id @default(uuid())
+  tenantId        String   @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  driverId        String   @map("driver_id")
+  tripId          String?  @map("trip_id")
+  lat             Decimal
+  lng             Decimal
+  speed           Decimal?
+  heading         Decimal?
+  isOfflineCached Boolean  @default(false) @map("is_offline_cached")
+  timestamp       DateTime
+
+  driver Driver @relation(fields: [driverId], references: [id])
+  trip   Trip?  @relation(fields: [tripId], references: [id])
+
+  @@index([driverId])
+  @@index([tripId])
+  @@index([timestamp])
+  @@index([driverId, timestamp])
+  @@index([tenantId])
+  @@map("gps_tracking_logs")
+}
+
+model TaskItem {
+  id        String   @id @default(uuid())
+  tenantId  String   @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  taskId    String   @map("task_id")
+  productId String   @map("product_id")
+  quantity  Int
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  task    Task    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([tenantId])
+  @@map("task_items")
+}
+
+model CycleCount {
+  id          String    @id @default(uuid())
+  tenantId    String    @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  warehouseId String    @map("warehouse_id")
+  status      String    @default("PENDING")
+  scheduledAt DateTime? @map("scheduled_at")
+  createdBy   String    @map("created_by")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  warehouse Warehouse  @relation(fields: [warehouseId], references: [id])
+  creator   TenantUser @relation(fields: [createdBy], references: [id])
+
+  @@index([warehouseId])
+  @@index([status])
+  @@index([tenantId])
+  @@map("cycle_counts")
+}
+
+model Adjustment {
+  id             String   @id @default(uuid())
+  tenantId       String   @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  inventoryId    String   @map("inventory_id")
+  warehouseId    String   @map("warehouse_id")
+  reasonCode     String?  @map("reason_code")
+  quantityChange Int      @map("quantity_change")
+  createdBy      String   @map("created_by")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  inventory Inventory  @relation(fields: [inventoryId], references: [id])
+  warehouse Warehouse  @relation(fields: [warehouseId], references: [id])
+  creator   TenantUser @relation(fields: [createdBy], references: [id])
+
+  @@index([warehouseId])
+  @@index([inventoryId])
+  @@index([createdAt])
+  @@index([tenantId])
+  @@map("adjustments")
+}
+
+model ScanLog {
+  id          String   @id @default(uuid())
+  tenantId    String   @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  warehouseId String   @map("warehouse_id")
+  taskId      String?  @map("task_id")
+  barcode     String
+  result      String
+  deviceId    String?  @map("device_id")
+  actorId     String?  @map("actor_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  warehouse Warehouse   @relation(fields: [warehouseId], references: [id])
+  task      Task?       @relation(fields: [taskId], references: [id])
+  actor     TenantUser? @relation(fields: [actorId], references: [id])
+
+  @@index([warehouseId])
+  @@index([taskId])
+  @@index([barcode])
+  @@index([createdAt])
+  @@index([tenantId])
+  @@map("scan_logs")
+}
+
+model PackStationLog {
+  id          String   @id @default(uuid())
+  tenantId    String   @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  warehouseId String   @map("warehouse_id")
+  orderId     String?  @map("order_id")
+  weightGrams Int?     @map("weight_grams")
+  dimensionCm String?  @map("dimension_cm")
+  deviceId    String?  @map("device_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id])
+  order     Order?    @relation(fields: [orderId], references: [id])
+
+  @@index([tenantId])
+  @@map("pack_station_logs")
+}
+
+model StaffShift {
+  id          String    @id @default(uuid())
+  tenantId    String    @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  warehouseId String    @map("warehouse_id")
+  staffId     String    @map("staff_id")
+  shiftStart  DateTime  @map("shift_start")
+  shiftEnd    DateTime? @map("shift_end")
+  status      String    @default("OPEN")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  warehouse Warehouse  @relation(fields: [warehouseId], references: [id])
+  staff     TenantUser @relation(fields: [staffId], references: [id])
+
+  @@index([warehouseId])
+  @@index([staffId])
+  @@index([status])
+  @@index([tenantId])
+  @@map("staff_shifts")
+}
+
+model EquipmentCheckout {
+  id            String    @id @default(uuid())
+  tenantId      String    @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  warehouseId   String    @map("warehouse_id")
+  equipmentCode String    @map("equipment_code")
+  staffId       String    @map("staff_id")
+  checkedOutAt  DateTime  @default(now()) @map("checked_out_at")
+  returnedAt    DateTime? @map("returned_at")
+  status        String    @default("OUT")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  warehouse Warehouse  @relation(fields: [warehouseId], references: [id])
+  staff     TenantUser @relation(fields: [staffId], references: [id])
+
+  @@index([warehouseId])
+  @@index([staffId])
+  @@index([status])
+  @@index([tenantId])
+  @@map("equipment_checkout")
+}
+
+// ----------------------- Return Management (RMA) -----------------------
+model ReturnReason {
+  id          String    @id @default(uuid())
+  tenantId    String    @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  code        String
+  name        String
+  description String?
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  requests ReturnRequest[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("return_reasons")
+}
+
+model ReturnRequest {
+  id                String    @id @default(uuid())
+  tenantId          String    @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  returnCode        String @map("return_code")
+  orderId           String    @map("order_id")
+  clientId          String?   @map("client_id")
+  requestedById     String?   @map("requested_by_id")
+  status            String    @default("PENDING")
+  reasonId          String?   @map("reason_id")
+  reasonNote        String?   @map("reason_note")
+  pickupAddress     String?   @map("pickup_address")
+  pickupLat         Decimal?  @map("pickup_lat")
+  pickupLng         Decimal?  @map("pickup_lng")
+  pickupTripId      String?   @map("pickup_trip_id")
+  pickupDriverId    String?   @map("pickup_driver_id")
+  pickupScheduledAt DateTime? @map("pickup_scheduled_at")
+  pickedUpAt        DateTime? @map("picked_up_at")
+  returnType        String    @default("REFUND")
+  notes             String?
+  approvedById      String?   @map("approved_by_id")
+  approvedAt        DateTime? @map("approved_at")
+  rejectionReason   String?   @map("rejection_reason")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  order        Order              @relation(fields: [orderId], references: [id])
+  reason       ReturnReason?      @relation(fields: [reasonId], references: [id])
+  pickupTrip   Trip?              @relation("PickupTrip", fields: [pickupTripId], references: [id])
+  pickupDriver Driver?            @relation(fields: [pickupDriverId], references: [id])
+  items        ReturnItem[]
+  inspections  ReturnInspection[]
+  refunds      Refund[]
+
+  @@unique([tenantId, returnCode])
+  @@index([orderId])
+  @@index([status])
+  @@index([returnCode])
+  @@index([clientId])
+  @@index([tenantId])
+  @@map("return_requests")
+}
+
+model ReturnItem {
+  id                String   @id @default(uuid())
+  tenantId          String   @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  returnRequestId   String   @map("return_request_id")
+  orderItemId       String?  @map("order_item_id")
+  productId         String   @map("product_id")
+  quantityRequested Int      @map("quantity_requested")
+  quantityApproved  Int?     @map("quantity_approved")
+  condition         String?
+  unitRefundAmount  Decimal? @map("unit_refund_amount")
+  notes             String?
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  returnRequest ReturnRequest @relation(fields: [returnRequestId], references: [id], onDelete: Cascade)
+  orderItem     OrderItem?    @relation(fields: [orderItemId], references: [id])
+
+  @@index([returnRequestId])
+  @@index([tenantId])
+  @@map("return_items")
+}
+
+model ReturnInspection {
+  id              String   @id @default(uuid())
+  tenantId        String   @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  returnRequestId String   @map("return_request_id")
+  inspectorId     String?  @map("inspector_id")
+  condition       String
+  damageNotes     String?  @map("damage_notes")
+  imagesJson      String?  @map("images_json")
+  approvedRefund  Decimal? @map("approved_refund")
+  warehouseId     String?  @map("warehouse_id")
+  binId           String?  @map("bin_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  returnRequest ReturnRequest @relation(fields: [returnRequestId], references: [id], onDelete: Cascade)
+
+  @@index([returnRequestId])
+  @@index([tenantId])
+  @@map("return_inspections")
+}
+
+model Refund {
+  id              String    @id @default(uuid())
+  tenantId        String    @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  returnRequestId String    @map("return_request_id")
+  invoiceId       String?   @map("invoice_id")
+  amount          Decimal
+  method          String    @default("ORIGINAL")
+  status          String    @default("PENDING")
+  transactionId   String?   @map("transaction_id")
+  processorId     String?   @map("processor_id")
+  processedAt     DateTime? @map("processed_at")
+  notes           String?
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  returnRequest ReturnRequest @relation(fields: [returnRequestId], references: [id])
+
+  @@index([returnRequestId])
+  @@index([invoiceId])
+  @@index([tenantId])
+  @@map("refunds")
+}
+
+// ----------------------- Billing & Payments -----------------------
+model Invoice {
+  id            String    @id @default(uuid())
+  tenantId      String    @map("tenant_id")
+  clientId      String?   @map("client_id")
+  invoiceNumber String @map("invoice_number")
+  totalAmount   Decimal   @map("total_amount")
+  status        String    @default("PENDING")
+  issuedAt      DateTime  @default(now()) @map("issued_at")
+  dueAt         DateTime? @map("due_at")
+  paidAt        DateTime? @map("paid_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  deletedAt     DateTime? @map("deleted_at")
+
+  tenant   Tenant               @relation(fields: [tenantId], references: [id])
+  client   Client?              @relation(fields: [clientId], references: [id])
+  items    InvoiceLineItem[]
+  payments PaymentTransaction[]
+
+  @@unique([tenantId, invoiceNumber])
+  @@index([tenantId])
+  @@index([clientId])
+  @@index([status])
+  @@map("invoices")
+}
+
+model InvoiceLineItem {
+  id          String  @id @default(uuid())
+  tenantId    String  @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  invoiceId   String  @map("invoice_id")
+  description String
+  quantity    Int
+  unitPrice   Decimal @map("unit_price")
+  lineTotal   Decimal @map("line_total")
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id])
+
+  @@index([invoiceId])
+  @@index([tenantId])
+  @@map("invoice_line_items")
+}
+
+model PaymentTransaction {
+  id            String   @id @default(uuid())
+  tenantId      String   @map("tenant_id")
+  invoiceId     String   @map("invoice_id")
+  amount        Decimal
+  method        String
+  status        String   @default("INITIATED")
+  transactionId String?  @map("transaction_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id])
+  invoice Invoice @relation(fields: [invoiceId], references: [id])
+
+  @@index([tenantId])
+  @@index([invoiceId])
+  @@map("payment_transactions")
+}
+
+// ----------------------- API Usage Statistics -----------------------
+model ApiUsageDaily {
+  id       String   @id @default(uuid())
+  tenantId String   @map("tenant_id")
+  date     DateTime @map("date") // stored as UTC midnight
+  endpoint String   @map("endpoint")
+  method   String   @map("method")
+  count    Int      @default(0) @map("count")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, date, endpoint, method])
+  @@map("api_usage_daily")
+}
+
+// ---------- Added models for API Keys, Feature Flags, Settings ----------
+model TenantApiKey {
+  id        String    @id @default(uuid())
+  tenantId  String    @map("tenant_id")
+  keyHash   String    @unique @map("key_hash")
+  name      String?
+  scopes    String[]  @map("scopes")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  revokedAt DateTime? @map("revoked_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@map("tenant_api_keys")
+}
+
+model ClientApiKey {
+  id        String    @id @default(uuid())
+  clientId  String    @map("client_id")
+  keyHash   String    @unique @map("key_hash")
+  name      String?
+  scopes    String[]  @map("scopes")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  revokedAt DateTime? @map("revoked_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  client Client @relation(fields: [clientId], references: [id])
+
+  @@index([clientId])
+  @@map("client_api_keys")
+}
+
+model FeatureFlag {
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  key         String
+  enabled     Boolean  @default(false)
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, key])
+  @@index([tenantId])
+  @@index([key])
+  @@map("feature_flags")
+}
+
+model SystemSetting {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  value       String
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("system_settings")
+}
+
+model TenantSetting {
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  key         String
+  value       String
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, key])
+  @@index([tenantId])
+  @@map("tenant_settings")
+}
+
+// ---------- File Attachments ----------
+model FileAttachment {
+  id         String   @id @default(uuid())
+  tenantId   String   @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  entityType String   @map("entity_type")
+  entityId   String   @map("entity_id")
+  fileUrl    String   @map("file_url")
+  fileName   String   @map("file_name")
+  fileSize   Int      @map("file_size")
+  mimeType   String   @map("mime_type")
+  uploadedBy String   @map("uploaded_by")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([entityType, entityId])
+  @@index([tenantId])
+  @@map("file_attachments")
+}
+
+// ---------- Shipping Rates ----------
+model ShippingRate {
+  id          String   @id @default(uuid())
+  tenantId    String   @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  name        String
+  baseFee     Decimal  @map("base_fee")
+  perKmRate   Decimal  @default(0) @map("per_km_rate")
+  perKgRate   Decimal  @default(0) @map("per_kg_rate")
+  minFee      Decimal  @default(0) @map("min_fee")
+  serviceType String   @map("service_type")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId])
+  @@map("shipping_rates")
+}
+
+// ---------- Notifications ----------
+model Notification {
+  id         String    @id @default(uuid())
+  tenantId   String    @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  userId     String    @map("user_id")
+  type       String
+  title      String
+  body       String
+  channel    String    @default("IN_APP") @map("channel")
+  priority   String    @default("NORMAL") @map("priority")
+  entityType String?   @map("entity_type")
+  entityId   String?   @map("entity_id")
+  metadata   String?
+  isRead     Boolean   @default(false) @map("is_read")
+  readAt     DateTime? @map("read_at")
+  sentAt     DateTime? @map("sent_at")
+  expiresAt  DateTime? @map("expires_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@index([userId, isRead])
+  @@index([userId])
+  @@index([tenantId])
+  @@map("notifications")
+}
+
+model NotificationTemplate {
+  id        String   @id @default(uuid())
+  code      String   @unique
+  name      String
+  channel   String   @map("channel")
+  subject   String?
+  body      String
+  variables String?
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("notification_templates")
+}
+
+// ---------- Tenant UI Configuration ----------
+model TenantUiConfig {
+  id             String   @id @default(uuid())
+  tenantId       String   @unique @map("tenant_id")
+  logoUrl        String?  @map("logo_url")
+  faviconUrl     String?  @map("favicon_url")
+  primaryColor   String   @default("#2563EB") @map("primary_color")
+  secondaryColor String   @default("#7C3AED") @map("secondary_color")
+  accentColor    String   @default("#F59E0B") @map("accent_color")
+  brandName      String?
+  customCss      String?  @map("custom_css")
+  loginMessage   String?  @map("login_message")
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@map("tenant_ui_configs")
+}

@@ -1,0 +1,15 @@
+node_modules
+**/node_modules
+dist
+**/dist
+.next
+**/.next
+.git
+.github
+*.log
+**/*.db
+!.packages/prisma-schemas/prisma/dev.db
+.vscode
+*.md
+scripts/
+Pagetemp/

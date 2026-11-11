@@ -1,0 +1,408 @@
+services:
+  # --- Infrastructure ---
+  postgres:
+    image: postgis/postgis:15-3.3
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-root}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-smartlogi}
+    ports:
+      - "5434:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - smartlogi-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U root -d smartlogi"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "2"
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    networks:
+      - smartlogi-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - redisdata:/data
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+    restart: unless-stopped
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_tickTime: 2000
+    networks:
+      - smartlogi-net
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
+    restart: unless-stopped
+
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    ports:
+      - "9092:29092"
+    depends_on:
+      - postgres
+      - zookeeper
+    networks:
+      - smartlogi-net
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 5 bash -c 'echo > /dev/tcp/localhost/29092' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "1"
+    restart: unless-stopped
+
+  s3:
+    image: localstack/localstack:3.8.0
+    environment:
+      - SERVICES=s3
+      - DEFAULT_REGION=us-east-1
+      - DEBUG=1
+    ports:
+      - "4566:4566"
+    volumes:
+      - localstack:/var/lib/localstack
+    networks:
+      - smartlogi-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:4566/_localstack/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+    restart: unless-stopped
+
+  db-migrator:
+    build:
+      context: .
+      dockerfile: packages/prisma-schemas/Dockerfile
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-root}:${POSTGRES_PASSWORD:?}@postgres:5432/${POSTGRES_DB:-smartlogi}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      - APP_DB_USER=${APP_DB_USER:-smartlogi_app}
+      - SEED_ON_START=${SEED_ON_START:-true}
+      # Destructive: only set to true when you explicitly want a clean reseed.
+      - FORCE_RESEED=${FORCE_RESEED:-false}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - smartlogi-net
+
+  # --- Core API (modular monolith: IAM / WMS / Orders / Logistics / Customer) ---
+  # 3B: core-api gom dần các service NestJS vào một ứng dụng. Bật từng
+  # nhóm route bằng CORE_API_ENABLED=true ở api-gateway (mặc định false cho
+  # tới khi đã kiểm chứng runtime).
+  core-api:
+    build:
+      context: .
+      dockerfile: backend/core-api/Dockerfile
+    environment:
+      - DATABASE_URL=postgresql://${APP_DB_USER:-smartlogi_app}:${POSTGRES_PASSWORD:?}@postgres:5432/${POSTGRES_DB:-smartlogi}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required}
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - GOOGLE_CALLBACK_URL=${GOOGLE_CALLBACK_URL:-http://localhost:8081/api/v1/admin/auth/google/callback}
+      - PORT=8081
+      - GOOGLE_AUTO_PROVISION=${GOOGLE_AUTO_PROVISION:-false}
+      - SUPER_ADMIN_GOOGLE_EMAILS=${SUPER_ADMIN_GOOGLE_EMAILS:-}
+      # --- module Orders (Kafka producer) ---
+      - KAFKA_BROKERS=${KAFKA_BROKERS:-kafka:29092}
+      # --- module Logistics (BullMQ, AI worker, S3) ---
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - AI_WORKER_URL=${AI_WORKER_URL:-http://host.docker.internal:8787}
+      - AI_API_KEY=${AI_API_KEY:-}
+      - S3_ENDPOINT=${S3_ENDPOINT:-http://s3:4566}
+      - S3_BUCKET=${S3_BUCKET:-smartlogi-pod}
+      - S3_ACCESS_KEY=${S3_ACCESS_KEY:-test}
+      - S3_SECRET_KEY=${S3_SECRET_KEY:-test}
+      # --- module Notification (email / SMS / push) ---
+      - WEBHOOK_SERVICE_URL=http://webhook-service:8092
+      - WEBHOOK_AUTH_TOKEN=${WEBHOOK_AUTH_TOKEN}
+      - EMAIL_PROVIDER=${EMAIL_PROVIDER:-console}
+      - SMS_PROVIDER=${SMS_PROVIDER:-console}
+      - PUSH_PROVIDER=${PUSH_PROVIDER:-console}
+      - SENDGRID_API_KEY=${SENDGRID_API_KEY:-}
+      - SENDGRID_FROM_EMAIL=${SENDGRID_FROM_EMAIL:-}
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID:-}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN:-}
+      - TWILIO_FROM_PHONE=${TWILIO_FROM_PHONE:-}
+      - DEFAULT_NOTIFICATION_EMAIL=${DEFAULT_NOTIFICATION_EMAIL:-no-reply@smartlogi.vn}
+      - RETURN_NOTIFICATION_EMAIL=${RETURN_NOTIFICATION_EMAIL:-returns@smartlogi.vn}
+      # --- module IAM (billing / thông báo) ---
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}
+      - TENANT_BASE_DOMAIN=${TENANT_BASE_DOMAIN:-smartlogi.vn}
+      - GOOGLE_GEOCODING_API_KEY=${GOOGLE_GEOCODING_API_KEY:-}
+      - S3_REGION=${S3_REGION:-us-east-1}
+      # --- chung ---
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:4001,http://localhost:4002,http://localhost:4003,http://localhost:4004}
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-development}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      db-migrator:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      s3:
+        condition: service_started
+    networks:
+      - smartlogi-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8081/api/v1/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+
+  # --- Core Backends (AI served via Cloudflare Worker — see workers/ai-worker) ---
+  gps-ingestion-service:
+    build:
+      context: ./backend/gps-ingestion-service
+    environment:
+      # Schema PostgreSQL chứa dữ liệu của tenant mà thiết bị thuộc về.
+      # `public` là schema của tenant demo; production nên đặt theo tenant.
+      - DB_SCHEMA=${DB_SCHEMA:-public}
+      - UDP_PORT=${UDP_PORT:-8091}
+      - DATABASE_URL=postgresql://${APP_DB_USER:-smartlogi_app}:${POSTGRES_PASSWORD:?}@postgres:5432/${POSTGRES_DB:-smartlogi}
+      - GPS_AUTH_TOKEN=${GPS_AUTH_TOKEN}
+    ports:
+      - "8090:8090"
+      - "8091:8091/udp"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      db-migrator:
+        condition: service_completed_successfully
+    networks:
+      - smartlogi-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8090/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.25"
+
+  webhook-service:
+    build:
+      context: ./backend/webhook-service
+    environment:
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - DATABASE_URL=postgresql://${APP_DB_USER:-smartlogi_app}:${POSTGRES_PASSWORD:?}@postgres:5432/${POSTGRES_DB:-smartlogi}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - PORT=8092
+      - WEBHOOK_AUTH_TOKEN=${WEBHOOK_AUTH_TOKEN}
+    networks:
+      - smartlogi-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      db-migrator:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8092/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.25"
+
+  # --- API Gateway ---
+  api-gateway:
+    build:
+      context: .
+      dockerfile: api/api-gateway/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - GOOGLE_CALLBACK_URL=${GOOGLE_CALLBACK_URL:-http://localhost:8081/api/v1/admin/auth/google/callback}
+      - CORE_API_URL=http://core-api:8081
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:4001,http://localhost:4002,http://localhost:4003,http://localhost:4004}
+      - GATEWAY_RATE_LIMIT=${GATEWAY_RATE_LIMIT:-1000}
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-development}
+      - AI_WORKER_URL=${AI_WORKER_URL:-http://host.docker.internal:8787}
+      - GPS_INGESTION_URL=http://gps-ingestion-service:8090
+      - WEBHOOK_SERVICE_URL=http://webhook-service:8092
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      core-api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - smartlogi-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:3000/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.25"
+
+  # --- Frontends ---
+  tenant-portal:
+    build:
+      context: .
+      dockerfile: frontend/reporting/tenant-portal/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api/v1}
+        NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID}
+    ports:
+      - "4002:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=/api/v1
+      - NEXT_PUBLIC_GOOGLE_CLIENT_ID=${NEXT_PUBLIC_GOOGLE_CLIENT_ID}
+      - API_INTERNAL_URL=http://api-gateway:3000/api/v1
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+    networks:
+      - smartlogi-net
+
+  admin-portal:
+    build:
+      context: .
+      dockerfile: frontend/feature-test/admin-portal/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api/v1}
+        NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID}
+    ports:
+      - "4001:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=/api/v1
+      - NEXT_PUBLIC_GOOGLE_CLIENT_ID=${NEXT_PUBLIC_GOOGLE_CLIENT_ID}
+      - API_INTERNAL_URL=http://api-gateway:3000/api/v1
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+    networks:
+      - smartlogi-net
+
+  customer-portal:
+    build:
+      context: .
+      dockerfile: frontend/reporting/customer-portal/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api/v1}
+        NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID}
+    ports:
+      - "4003:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=/api/v1
+      - NEXT_PUBLIC_GOOGLE_CLIENT_ID=${NEXT_PUBLIC_GOOGLE_CLIENT_ID}
+      - API_INTERNAL_URL=http://api-gateway:3000/api/v1
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+    networks:
+      - smartlogi-net
+
+  pack-station-web:
+    build:
+      context: .
+      dockerfile: frontend/reporting/pack-station-web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api/v1}
+        NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID}
+    ports:
+      - "4004:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=/api/v1
+      - NEXT_PUBLIC_GOOGLE_CLIENT_ID=${NEXT_PUBLIC_GOOGLE_CLIENT_ID}
+      - API_INTERNAL_URL=http://api-gateway:3000/api/v1
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+    networks:
+      - smartlogi-net
+
+  # --- Portal reverse proxy: one host per frontend (no more port juggling) ---
+  portals-proxy:
+    build:
+      context: ./infra/nginx
+      dockerfile: Dockerfile
+    ports:
+      - "${PORTALS_PROXY_PORT:-8080}:80"
+    depends_on:
+      - admin-portal
+      - tenant-portal
+      - customer-portal
+      - pack-station-web
+    networks:
+      - smartlogi-net
+
+networks:
+  smartlogi-net:
+    driver: bridge
+
+volumes:
+  pgdata:
+  redisdata:
+  localstack:

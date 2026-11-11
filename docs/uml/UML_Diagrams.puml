@@ -1,0 +1,1361 @@
+' =============================================================================
+' PlantUML — SmartLogi AI SaaS (Logistics, WMS & TMS Platform)
+' Comprehensive Enterprise UML Architecture Documentation
+' 
+' Master Diagrams:
+'   1. container-diagram (C4 Level 2 Container Architecture)
+'   2. microservices-architecture (Component Architecture & Event Mesh)
+'   3. ai-vrp-engine-components (Google OR-Tools & VRP Microservice)
+'   4. entity-relationship-diagram (Multi-tenant Prisma ORM ERD)
+'   5. deployment-diagram (Kubernetes & Infrastructure Topology)
+'   6. usecase-overall (Multi-role Logistics Actors & Subsystems)
+'   7. frontend-architecture (Next.js Portals & Hardware Integration)
+'   8. seq-order-to-delivery (End-to-End Order Fulfillment Flow)
+'   9. seq-realtime-gps-tracking (Go GPS Ingestion & Geofencing)
+'  10. seq-ai-vrp-optimization (OR-Tools Multi-Vehicle Route Solver)
+'  11. seq-wms-fifo-picking (FIFO/FEFO Wave Picking & PDA Scanning)
+'  12. state-order-trip-lifecycle (Order & Delivery Trip State Machine)
+'  13. state-inventory-movement (WMS Stock State Transitions)
+'  14. activity-wms-fulfillment-pipeline (Warehouse Operations Activity Flow)
+' =============================================================================
+
+' =============================================================================
+' 1. C4 CONTAINER DIAGRAM
+' =============================================================================
+@startuml container-diagram
+!theme plain
+skinparam defaultFontName "DejaVu Sans"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam linetype ortho
+skinparam nodesep 35
+skinparam ranksep 40
+
+skinparam package {
+  BackgroundColor #F8F9FA
+  BorderColor #5F6368
+  FontColor #202124
+  FontStyle bold
+  FontSize 12
+}
+
+skinparam component {
+  BackgroundColor #FFFFFF
+  BorderColor #1A73E8
+  FontColor #202124
+  FontSize 11
+}
+
+skinparam database {
+  BackgroundColor #E8F0FE
+  BorderColor #1967D2
+  FontColor #174EA6
+  FontSize 11
+}
+
+skinparam queue {
+  BackgroundColor #FEE2E2
+  BorderColor #DC2626
+  FontColor #991B1B
+  FontSize 11
+}
+
+skinparam cloud {
+  BackgroundColor #FEF7E0
+  BorderColor #F9AB00
+  FontColor #B06000
+  FontSize 11
+}
+
+title Container Diagram - SmartLogi AI SaaS Platform (C4 Level 2)
+
+package "Client Layer" as CLIENTS #FAFAFA {
+  component "Tenant Portal (WMS & TMS)\n[Next.js 14 App Router, Shadcn UI]\n• Dispatch Tower, Warehouse Bin Grid\n• Port: 3000" as TENANT_PORTAL #FEFCE8
+  component "SaaS Admin Portal\n[Next.js 14 Dashboard]\n• Tenant Provisioning, Billing, Plans\n• Port: 3001" as ADMIN_PORTAL #FEFCE8
+  component "Driver Mobile App\n[React Native / PWA]\n• Offline Sync, Turn-by-Turn, Proof of Delivery\n• Background GPS Tracker" as DRIVER_APP #FEFCE8
+  component "Warehouse Hardware Clients\n• PDA Laser Scanner (Barcode/QR)\n• Electronic Packing Scale (Web Serial API)" as HARDWARE #FEFCE8
+}
+
+package "API Gateway & Edge Layer" as GATEWAY_LAYER #F1F5F9 {
+  component "Kong API Gateway\n[Kong 3.4 Alpine]\n• Path-based Microservice Routing\n• JWT Token & Tenant Schema Resolver\n• Rate Limiting & SSL Termination\n• Port: 8000 / 8443" as KONG_GW #EFF6FF
+}
+
+package "Core Microservices Tier" as SERVICES_LAYER #FFFFFF {
+  component "IAM Service\n[NestJS, TypeScript]\n• Multi-tenant Auth & RBAC\n• Port: 3002" as IAM_SVC #EFF6FF
+
+  component "Inventory Service (WMS Core)\n[NestJS, TypeScript]\n• Wave Picking, FIFO/FEFO Allocation\n• Zone/Rack/Bin Management, Scales\n• Port: 3003" as INVENTORY_SVC #EFF6FF
+
+  component "Logistics Service (TMS Core)\n[NestJS, TypeScript]\n• Trips, Dispatching, COD Remittance\n• Geocoding & Route Jobs\n• Port: 3004" as LOGISTICS_SVC #EFF6FF
+
+  component "Order Service\n[NestJS, TypeScript]\n• B2B/B2C Order Lifecycle & Tracking\n• Port: 3005" as ORDER_SVC #EFF6FF
+
+  component "AI Engine (SAI Core)\n[FastAPI, Python 3.11]\n• Google OR-Tools VRP Solver\n• Demand Forecasting & Feedback Loop\n• Port: 5000" as AI_SVC #FFF7ED
+
+  component "GPS Ingestion Service\n[Golang 1.21]\n• High-throughput Ping Handling\n• Geofence Checking\n• Port: 8080" as GPS_SVC #ECFDF5
+}
+
+package "Messaging & Persistence Layer" as DATA_LAYER #F8FAFC {
+  database "Multi-Tenant PostgreSQL 16\n• Schema-per-tenant or TenantId isolation\n• 50+ Prisma Tables (WMS, TMS, Orders)\n• Port: 5432" as POSTGRES #E8F0FE
+
+  queue "Apache Kafka & Redis 7\n• Kafka Topics: 'gps.telemetry', 'order.events'\n• Redis: Driver Positions & WMS Locks\n• Ports: 9092, 6379" as EVENT_BUS #FEE2E2
+}
+
+package "External SaaS & GIS Gateways" as EXT_SVCS #FEF7E0 {
+  cloud "OpenStreetMap & OSRM Engine\n(Geocoding & Distance Matrix)" as OSRM_API
+  cloud "SMS / Email Gateway\n(Delivery OTP & Notifications)" as NOTIF_EXT
+}
+
+' Connections
+TENANT_PORTAL --> KONG_GW : HTTPS / GraphQL / REST
+ADMIN_PORTAL --> KONG_GW : HTTPS / REST
+DRIVER_APP --> KONG_GW : HTTPS REST
+DRIVER_APP --> GPS_SVC : UDP / TCP Telemetry Stream
+HARDWARE --> TENANT_PORTAL : Web Serial & HID Scanner
+
+KONG_GW --> IAM_SVC : Route /api/v1/auth, /iam
+KONG_GW --> INVENTORY_SVC : Route /api/v1/wms, /inventory
+KONG_GW --> LOGISTICS_SVC : Route /api/v1/tms, /trips
+KONG_GW --> ORDER_SVC : Route /api/v1/orders
+KONG_GW --> AI_SVC : Route /api/v1/ai
+
+IAM_SVC --> POSTGRES : Query Tenants & RBAC
+INVENTORY_SVC --> POSTGRES : Optimistic Locking on Stock
+LOGISTICS_SVC --> POSTGRES : Trips & Deliveries
+ORDER_SVC --> POSTGRES : Order State Machine
+
+LOGISTICS_SVC --> AI_SVC : HTTP POST /vrp/optimize
+AI_SVC --> OSRM_API : Compute Distance Matrix
+LOGISTICS_SVC --> OSRM_API : Map Waypoints & Geocoding
+
+GPS_SVC --> EVENT_BUS : Publish telemetry & alerts
+EVENT_BUS --> LOGISTICS_SVC : Consume GPS coordinates
+LOGISTICS_SVC --> NOTIF_EXT : Trigger SMS Delivery Alerts
+@enduml
+
+' =============================================================================
+' 2. MICROSERVICES & EVENT MESH ARCHITECTURE
+' =============================================================================
+@startuml microservices-architecture
+!theme plain
+skinparam defaultFontName "DejaVu Sans"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam linetype ortho
+
+title Microservices Component Architecture & Event Mesh
+
+package "Edge Routing Layer" #F8FAFC {
+  component "Kong API Gateway\n• Plugins: Rate-Limiting, Key-Auth, CORS\n• Tenant Identification Filter" as KONG #EFF6FF
+}
+
+package "Domain Microservices" #FFFFFF {
+  component "IAM Service\n• JWT Token Issuer\n• Granular RBAC Guards\n• Multi-tenant Org Resolver" as IAM #EFF6FF
+  component "Order Service\n• Order Ingestion & Validation\n• Returns & RMA Handler" as ORDER #EFF6FF
+  component "Inventory WMS Service\n• Zone/Rack/Bin Grid Model\n• FIFO / FEFO / LIFO Allocator\n• Pack Station & Scale Handler" as WMS #EFF6FF
+  component "Logistics TMS Service\n• Dispatch Control Tower\n• Driver Assignments & COD\n• Geofence Trigger Manager" as TMS #EFF6FF
+  component "AI VRP Engine\n• Google OR-Tools Solver\n• Capacity & Time Window Constraints\n• Continuous Machine Learning" as AI #FFF7ED
+  component "GPS Ingestion Service (Go)\n• Concurrent Goroutine Pool\n• Low Latency Driver Tracker" as GPS #ECFDF5
+  component "Notification Service\n• Multi-channel Dispatcher (SMS, Email, Push)" as NOTIF #EFF6FF
+  component "Webhook Service\n• Outbound B2B Client Webhook Dispatcher" as WEBHOOK #EFF6FF
+}
+
+package "Event Mesh & Streaming (Kafka + Redis)" #FEE2E2 {
+  queue "Kafka Topic: 'order.created'" as TOPIC_ORDER
+  queue "Kafka Topic: 'wms.picked'" as TOPIC_WMS
+  queue "Kafka Topic: 'tms.dispatched'" as TOPIC_TMS
+  queue "Kafka Topic: 'gps.telemetry'" as TOPIC_GPS
+  queue "Redis In-Memory: Driver Latest Coordinates" as REDIS_CACHE
+}
+
+KONG --> IAM
+KONG --> ORDER
+KONG --> WMS
+KONG --> TMS
+KONG --> AI
+
+ORDER --> TOPIC_ORDER : Emits OrderCreated
+TOPIC_ORDER --> WMS : Triggers Wave Picking & Allocation
+
+WMS --> TOPIC_WMS : Emits ItemsPacked
+TOPIC_WMS --> TMS : Triggers TMS Delivery Staging
+
+TMS --> AI : Request Route Optimization (REST)
+AI --> TMS : Return Optimal Vehicle Itineraries
+
+TMS --> TOPIC_TMS : Emits TripDispatched
+TOPIC_TMS --> NOTIF : Send SMS to Customers
+TOPIC_TMS --> WEBHOOK : Notify External ERPs
+
+GPS --> TOPIC_GPS : Stream coordinate batches
+TOPIC_GPS --> TMS : Live Track & Detect Geofence Entry
+GPS --> REDIS_CACHE : Cache latest (lat, lng, speed)
+@enduml
+
+' =============================================================================
+' 3. AI VRP ENGINE COMPONENTS
+' =============================================================================
+@startuml ai-vrp-engine-components
+!theme plain
+skinparam defaultFontName "DejaVu Sans"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam linetype ortho
+
+title AI VRP Engine Internal Architecture (FastAPI & Google OR-Tools)
+
+package "FastAPI Application Layer (:5000)" #F8FAFC {
+  component "FastAPI Engine Controller\n• POST /vrp/optimize\n• POST /forecast/demand\n• POST /feedback/record" as API_CTRL #EFF6FF
+  component "Request Validator & Normalizer\n(Pydantic VRP Request Schemas)" as VALIDATOR #EFF6FF
+}
+
+package "VRP Solving Core" #FFF7ED {
+  component "Distance & Duration Matrix Calculator\n• Calls OSRM / Haversine Matrix API\n• Real-world road network distance matrix" as MATRIX_CALC #FED7AA
+
+  component "Google OR-Tools Routing Model Engine\n[pywraplp & routing_enums_pb2]" as ORTOOLS #FED7AA {
+    component "RoutingIndexManager\n(Nodes, Vehicles, Depots)" as IDX_MGR #FFFFFF
+    component "RoutingModel\n(Objective: Minimize Total Fleet Transit Time)" as ROUTE_MODEL #FFFFFF
+  }
+
+  component "Constraint Dimension Evaluators" as CONSTRAINTS #FDBA74 {
+    component "Capacity Dimension\n(Vehicle Weight & Volume Limits)" as CAP_DIM #FFFFFF
+    component "Time Window Dimension\n(Customer Opening Hours & Service Times)" as TIME_DIM #FFFFFF
+    component "Driver Working Hours Limit\n(Max Shift Duration: 8 Hours)" as SHIFT_DIM #FFFFFF
+  }
+
+  component "Search Strategy & Metaheuristics\n• First Solution: PATH_CHEAPEST_ARC\n• Local Search: GUIDED_LOCAL_SEARCH" as SEARCH_STRAT #FED7AA
+}
+
+package "Learning & Continuous Improvement" #ECFDF5 {
+  component "Feedback Loop & History Store\n• Driver Actual Route vs Predicted Time\n• Speed & Delay Adjustment Factors" as FEEDBACK #A7F3D0
+  component "Demand Forecast Model (Prophet / Scikit-learn)\n• Seasonal Delivery Demand Prediction" as FORECAST #A7F3D0
+}
+
+API_CTRL --> VALIDATOR
+VALIDATOR --> MATRIX_CALC
+MATRIX_CALC --> IDX_MGR
+IDX_MGR --> ROUTE_MODEL
+ROUTE_MODEL --> CONSTRAINTS
+ROUTE_MODEL --> SEARCH_STRAT
+SEARCH_STRAT --> API_CTRL : Return Optimized Stops & Polyline
+API_CTRL --> FEEDBACK : Store actual trip metrics
+FEEDBACK ..> MATRIX_CALC : Apply speed calibration factors
+@enduml
+
+' =============================================================================
+' 4. ENTITY RELATIONSHIP DIAGRAM (ERD)
+' =============================================================================
+@startuml entity-relationship-diagram
+!theme plain
+skinparam defaultFontName "DejaVu Sans"
+skinparam defaultFontSize 10
+skinparam roundCorner 6
+skinparam shadowing false
+skinparam linetype ortho
+skinparam classFontSize 10
+skinparam classAttributeFontSize 9
+
+title Entity Relationship Diagram (ERD) - Multi-Tenant Prisma Schema
+
+package "Tenancy & Security" #EFF6FF {
+  class Tenant {
+    + String id [PK]
+    + String name
+    + String code [Unique]
+    + String subscriptionPlanId [FK]
+    + Boolean isActive
+    + DateTime createdAt
+  }
+
+  class TenantUser {
+    + String id [PK]
+    + String tenantId [FK]
+    + String email [Unique]
+    + String passwordHash
+    + String fullName
+    + String role [ADMIN, DISPATCHER, WAREHOUSE, DRIVER]
+    + Boolean isActive
+  }
+}
+
+package "Warehouse Management System (WMS)" #ECFDF5 {
+  class Warehouse {
+    + String id [PK]
+    + String tenantId [FK]
+    + String code
+    + String name
+    + String address
+    + Float latitude
+    + Float longitude
+  }
+
+  class Zone {
+    + String id [PK]
+    + String warehouseId [FK]
+    + String code [RECEIVING, STORAGE, PICKING, PACKING]
+  }
+
+  class Rack {
+    + String id [PK]
+    + String zoneId [FK]
+    + String code
+  }
+
+  class Bin {
+    + String id [PK]
+    + String rackId [FK]
+    + String code [e.g. A-01-02]
+    + Float maxWeight
+    + Float maxVolume
+    + Boolean isOccupied
+  }
+
+  class Product {
+    + String id [PK]
+    + String tenantId [FK]
+    + String sku [Unique]
+    + String barcode
+    + String name
+    + Float weight
+    + Float volume
+    + String allocationStrategy [FIFO, FEFO, LIFO]
+  }
+
+  class Inventory {
+    + String id [PK]
+    + String tenantId [FK]
+    + String productId [FK]
+    + String binId [FK]
+    + String lotNumber
+    + DateTime expiryDate
+    + Int quantity
+    + Int reservedQuantity
+    + Int version [Optimistic Lock]
+  }
+
+  class StockMovement {
+    + String id [PK]
+    + String tenantId [FK]
+    + String productId [FK]
+    + String fromBinId [FK]
+    + String toBinId [FK]
+    + Int quantity
+    + String movementType [INBOUND, PUTAWAY, PICK, ADJUSTMENT]
+    + DateTime timestamp
+  }
+}
+
+package "Orders & Fulfillment" #FEFCE8 {
+  class Order {
+    + String id [PK]
+    + String tenantId [FK]
+    + String orderNumber [Unique]
+    + String customerName
+    + String customerPhone
+    + String deliveryAddress
+    + Float deliveryLat
+    + Float deliveryLng
+    + OrderStatus status
+    + Decimal totalAmount
+    + Decimal codAmount
+    + DateTime createdAt
+  }
+
+  enum OrderStatus {
+    CREATED
+    ALLOCATED
+    PICKING
+    PACKED
+    DISPATCHED
+    DELIVERED
+    FAILED
+    RETURNED
+  }
+
+  class OrderItem {
+    + String id [PK]
+    + String orderId [FK]
+    + String productId [FK]
+    + Int quantity
+    + Decimal unitPrice
+  }
+
+  class WavePicking {
+    + String id [PK]
+    + String tenantId [FK]
+    + String warehouseId [FK]
+    + String status [PENDING, IN_PROGRESS, COMPLETED]
+    + DateTime startedAt
+  }
+}
+
+package "Transportation Management System (TMS)" #FFF7ED {
+  class Vehicle {
+    + String id [PK]
+    + String tenantId [FK]
+    + String plateNumber [Unique]
+    + Float maxPayloadKg
+    + Float maxVolumeCbm
+    + String vehicleType [TRUCK, VAN, BIKE]
+    + Boolean isActive
+  }
+
+  class Driver {
+    + String id [PK]
+    + String tenantId [FK]
+    + String userId [FK, Unique]
+    + String licenseNumber
+    + String phone
+    + String status [AVAILABLE, ON_TRIP, OFF_DUTY]
+  }
+
+  class Trip {
+    + String id [PK]
+    + String tenantId [FK]
+    + String tripCode [Unique]
+    + String vehicleId [FK]
+    + String driverId [FK]
+    + TripStatus status
+    + Float totalDistanceKm
+    + Float estimatedDurationHours
+    + DateTime scheduledStart
+    + DateTime actualStart
+    + DateTime completedAt
+  }
+
+  enum TripStatus {
+    DRAFT
+    ASSIGNED
+    IN_TRANSIT
+    COMPLETED
+    CANCELLED
+  }
+
+  class TripStop {
+    + String id [PK]
+    + String tripId [FK]
+    + String orderId [FK]
+    + Int sequenceNumber
+    + Float stopLat
+    + Float stopLng
+    + StopStatus status
+    + DateTime eta
+    + DateTime actualArrival
+    + String proofOfDeliveryUrl
+    + String signatureUrl
+  }
+
+  class GpsTrackingLog {
+    + String id [PK]
+    + String driverId [FK]
+    + String tripId [FK]
+    + Float latitude
+    + Float longitude
+    + Float speedKmh
+    + DateTime recordedAt
+  }
+}
+
+Tenant ||--o{ TenantUser : "has"
+Tenant ||--o{ Warehouse : "owns"
+Tenant ||--o{ Product : "catalog"
+Tenant ||--o{ Order : "receives"
+Tenant ||--o{ Vehicle : "fleet"
+Tenant ||--o{ Trip : "dispatches"
+
+Warehouse ||--o{ Zone : "contains"
+Zone ||--o{ Rack : "contains"
+Rack ||--o{ Bin : "contains"
+
+Bin ||--o{ Inventory : "stores"
+Product ||--o{ Inventory : "item"
+Product ||--o{ StockMovement : "tracks"
+
+Order ||--o{ OrderItem : "contains"
+Product ||--o{ OrderItem : "ordered"
+
+Trip ||--o{ TripStop : "consists of"
+Vehicle ||--o{ Trip : "used for"
+Driver ||--o{ Trip : "assigned to"
+Order ||--o| TripStop : "delivered by"
+Driver ||--o{ GpsTrackingLog : "transmits"
+@enduml
+
+' =============================================================================
+' 5. DEPLOYMENT TOPOLOGY DIAGRAM
+' =============================================================================
+@startuml deployment-diagram
+!theme plain
+skinparam defaultFontName "DejaVu Sans"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam linetype ortho
+
+title Kubernetes & Cloud Production Topology - SmartLogi AI SaaS
+
+node "Kubernetes Cluster: smartlogi-prod" as K8S_CLUSTER {
+  
+  package "Ingress Controller" {
+    component "Kong Gateway Ingress Pod\n• Ports 80 / 443 TLS\n• Plugin: CORS, JWT, KeyAuth" as KONG_POD #EFF6FF
+  }
+
+  package "Presentation Services" {
+    component "Tenant Portal Pods (Replicas: 3)\n[Next.js 14 SSR]\n• Port: 3000" as TENANT_POD #FEFCE8
+    component "Admin Portal Pods (Replicas: 2)\n[Next.js 14]\n• Port: 3001" as ADMIN_POD #FEFCE8
+  }
+
+  package "Stateless Application Microservices" {
+    component "IAM Service Pods (Replicas: 2)\n• Port: 3002" as IAM_POD #EFF6FF
+    component "Inventory WMS Pods (Replicas: 3)\n• Port: 3003" as WMS_POD #EFF6FF
+    component "Logistics TMS Pods (Replicas: 3)\n• Port: 3004" as TMS_POD #EFF6FF
+    component "Order Service Pods (Replicas: 2)\n• Port: 3005" as ORDER_POD #EFF6FF
+    component "AI VRP Solver Pods (Replicas: 2)\n• FastAPI + OR-Tools (Port: 5000)" as AI_POD #FFF7ED
+    component "Go GPS Ingestion Pods (Replicas: 4)\n• High concurrency (Port: 8080)" as GPS_POD #ECFDF5
+  }
+
+  package "Stateful Middleware & Caching" {
+    queue "Kafka Cluster (3 Brokers + Zookeeper)\n• Persistent Volumes: 500GB" as KAFKA_CLUSTER #FEE2E2
+    queue "Redis Sentinel Cluster (Master-Replica)\n• Caching & Distributed Locks" as REDIS_CLUSTER #FEE2E2
+  }
+
+  package "Monitoring & Observability" {
+    component "Prometheus & Grafana Pods\n• Scrapes metrics from Microservices" as MONITOR_POD #F3F4F6
+  }
+}
+
+node "Managed Database Tier (Cloud Provider)" as DB_TIER #E8F0FE {
+  database "Managed PostgreSQL 16 Cluster\n• Multi-AZ High Availability\n• Primary Read-Write + Read Replica\n• Port: 5432" as CLOUD_PG
+}
+
+KONG_POD --> TENANT_POD
+KONG_POD --> ADMIN_POD
+KONG_POD --> IAM_POD
+KONG_POD --> WMS_POD
+KONG_POD --> TMS_POD
+KONG_POD --> ORDER_POD
+KONG_POD --> AI_POD
+
+IAM_POD --> CLOUD_PG
+WMS_POD --> CLOUD_PG
+TMS_POD --> CLOUD_PG
+ORDER_POD --> CLOUD_PG
+
+WMS_POD --> REDIS_CLUSTER : Acquire lock on Bin
+GPS_POD --> KAFKA_CLUSTER : Produce telemetry events
+KAFKA_CLUSTER --> TMS_POD : Consume GPS updates
+TMS_POD --> AI_POD : Submit VRP route solve request
+@enduml
+
+' =============================================================================
+' 6. OVERALL USE CASE DIAGRAM
+' =============================================================================
+@startuml usecase-overall
+!theme plain
+skinparam defaultFontName "DejaVu Sans"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam linetype polyline
+
+title Overall System Use Cases - SmartLogi AI SaaS Platform
+
+left to right direction
+
+actor "Platform SuperAdmin" as SUPERADMIN #EFF6FF
+actor "Tenant Dispatcher" as DISPATCHER #FEFCE8
+actor "Warehouse Operator" as WAREHOUSE_STAFF #ECFDF5
+actor "Driver" as DRIVER #FFF7ED
+actor "End Customer" as CUSTOMER #FDF2F8
+actor "AI VRP Engine" as AI_ACTOR #E0E7FF
+
+rectangle "SmartLogi Platform Boundary" {
+
+  package "Tenant Management & Administration" {
+    usecase "Manage Tenants & Subscriptions" as UC_TENANT_MGMT
+    usecase "Configure Granular RBAC Permissions" as UC_RBAC
+    usecase "View Platform Usage & Revenue Metrics" as UC_PLATFORM_METRICS
+  }
+
+  package "Warehouse & Inventory Operations (WMS)" {
+    usecase "Inbound Receiving & Quality Inspection" as UC_RECEIVING
+    usecase "Putaway to Specific Bin/Rack" as UC_PUTAWAY
+    usecase "Execute Wave Picking (FIFO/FEFO)" as UC_WAVE_PICK
+    usecase "Pack Goods with Electronic Scale & Barcode" as UC_PACKING
+    usecase "Perform Cycle Count & Stock Adjustment" as UC_CYCLE_COUNT
+  }
+
+  package "Transportation & Dispatching (TMS)" {
+    usecase "Import Orders & Geocode Addresses" as UC_IMPORT_ORDERS
+    usecase "Request AI Route Optimization (VRP)" as UC_OPTIMIZE_ROUTE
+    usecase "Dispatch Trips to Vehicles & Drivers" as UC_DISPATCH_TRIP
+    usecase "Monitor Live Fleet on Dispatch Tower Map" as UC_DISPATCH_TOWER
+    usecase "Reconcile COD Cash & Fuel Expenses" as UC_COD_RECONCILE
+  }
+
+  package "Driver Mobile Workflow" {
+    usecase "Receive Assigned Trip & View Stops" as UC_VIEW_TRIP
+    usecase "Stream Live GPS Telemetry" as UC_GPS_STREAM
+    usecase "Confirm Delivery with E-Signature & Photo" as UC_POD
+  }
+
+  package "Customer Tracking" {
+    usecase "Track Order Delivery in Real-Time" as UC_TRACK_ORDER
+    usecase "Submit Return Request (RMA)" as UC_RMA
+  }
+}
+
+SUPERADMIN --> UC_TENANT_MGMT
+SUPERADMIN --> UC_RBAC
+SUPERADMIN --> UC_PLATFORM_METRICS
+
+DISPATCHER --> UC_IMPORT_ORDERS
+DISPATCHER --> UC_OPTIMIZE_ROUTE
+DISPATCHER --> UC_DISPATCH_TRIP
+DISPATCHER --> UC_DISPATCH_TOWER
+DISPATCHER --> UC_COD_RECONCILE
+
+WAREHOUSE_STAFF --> UC_RECEIVING
+WAREHOUSE_STAFF --> UC_PUTAWAY
+WAREHOUSE_STAFF --> UC_WAVE_PICK
+WAREHOUSE_STAFF --> UC_PACKING
+WAREHOUSE_STAFF --> UC_CYCLE_COUNT
+
+DRIVER --> UC_VIEW_TRIP
+DRIVER --> UC_GPS_STREAM
+DRIVER --> UC_POD
+
+CUSTOMER --> UC_TRACK_ORDER
+CUSTOMER --> UC_RMA
+
+UC_OPTIMIZE_ROUTE ..> AI_ACTOR : <<delegate>>
+UC_WAVE_PICK ..> UC_PACKING : <<precedes>>
+UC_DISPATCH_TRIP ..> UC_VIEW_TRIP : <<triggers>>
+@enduml
+
+' =============================================================================
+' 7. FRONTEND CLIENT ARCHITECTURE DIAGRAM
+' =============================================================================
+@startuml frontend-architecture
+!theme plain
+skinparam defaultFontName "DejaVu Sans"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam linetype ortho
+
+title Frontend Client Architecture (Tenant Portal & Hardware Integration)
+
+package "Presentation Components (React 18 & Next.js 14)" #FAFAFA {
+  component "Dispatch Control Tower\n• Leaflet Map with Real-time Markers\n• Vehicle Polyline Trails\n• Geofence Boundaries Overlay" as DISPATCH_TOWER #FEFCE8
+  component "WMS Bin Management Grid\n• Interactive 3D/2D Warehouse Layout\n• Zone, Rack, Bin Color-coded Capacity" as WMS_GRID #FEFCE8
+  component "Packing Station Screen\n• Barcode Scanning Feedback\n• Weight Verification Modal" as PACK_STATION #FEFCE8
+  component "Order & Trip Management Tables\n• TanStack Table v8, Advanced Filters\n• Bulk Action Toolbar" as TABLE_VIEW #FEFCE8
+}
+
+package "Security & Authorization Layer" #EFF6FF {
+  component "<Can permission='...'> Wrapper\n• Button-level Granular RBAC Guard\n• Evaluates permissions array from JWT" as CAN_GUARD #DBEAFE
+  component "Tenant Context Provider\n• Active Tenant Schema & Branch ID" as TENANT_CTX #DBEAFE
+}
+
+package "Hardware Integration Hooks" #ECFDF5 {
+  component "useWebSerialScale Hook\n• Connects to RS-232 / USB Electronic Scales\n• Reads tare & live net weight stream" as SCALE_HOOK #A7F3D0
+  component "useBarcodeScanner Hook\n• Intercepts HID Laser Scanner Keypresses\n• Buffers characters & detects Enter key" as SCAN_HOOK #A7F3D0
+}
+
+package "State Management & Data Layer" #FFF7ED {
+  component "TanStack React Query\n• Optimistic Updates on Drag-and-Drop\n• Polling / Invalidation on WebSocket events" as REACT_QUERY #FED7AA
+  component "Socket.IO Client\n• Subscribes to 'driver:location:updated'\n• Subscribes to 'geofence:alert'" as SOCKET_CLIENT #FED7AA
+}
+
+DISPATCH_TOWER --> SOCKET_CLIENT
+DISPATCH_TOWER --> REACT_QUERY
+PACK_STATION --> SCALE_HOOK
+PACK_STATION --> SCAN_HOOK
+
+DISPATCH_TOWER --> CAN_GUARD
+WMS_GRID --> CAN_GUARD
+PACK_STATION --> CAN_GUARD
+TABLE_VIEW --> CAN_GUARD
+
+CAN_GUARD --> TENANT_CTX
+REACT_QUERY --> TENANT_CTX
+@enduml
+
+' =============================================================================
+' 8. SEQUENCE: END-TO-END ORDER TO DELIVERY
+' =============================================================================
+@startuml seq-order-to-delivery
+!theme plain
+autonumber
+skinparam defaultFontName "DejaVu Sans"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+
+title Sequence: End-to-End Order Fulfillment & TMS Dispatch
+
+actor "Customer / ERP" as CUST #EFF6FF
+participant "Order Service" as ORDER_SVC #EFF6FF
+participant "Inventory Service (WMS)" as WMS_SVC #EFF6FF
+actor "Warehouse Operator" as OPERATOR #ECFDF5
+participant "Logistics Service (TMS)" as TMS_SVC #EFF6FF
+participant "AI VRP Engine" as AI_SVC #FFF7ED
+actor "Driver" as DRIVER #FFF7ED
+database "PostgreSQL DB" as DB #E8F0FE
+
+CUST -> ORDER_SVC: POST /orders (Create 5 Orders)
+activate ORDER_SVC
+ORDER_SVC -> DB: INSERT INTO orders (status = 'CREATED')
+ORDER_SVC -> WMS_SVC: POST /wms/waves/allocate { orderIds }
+deactivate ORDER_SVC
+
+activate WMS_SVC
+WMS_SVC -> DB: Query Stock by FIFO/FEFO across Bins
+WMS_SVC -> DB: Lock & Reserve Inventory Quantity (Optimistic Lock)
+WMS_SVC -> DB: INSERT INTO wave_pickings & tasks
+WMS_SVC --> OPERATOR: Send Wave Picking Task to PDA
+deactivate WMS_SVC
+
+OPERATOR -> WMS_SVC: PDA scans Bin barcode & Product barcode
+OPERATOR -> WMS_SVC: Weigh parcel at Pack Station (Weight OK)
+WMS_SVC -> DB: UPDATE orders SET status = 'PACKED'
+WMS_SVC -> TMS_SVC: POST /tms/staging/ready { orderIds }
+
+activate TMS_SVC
+TMS_SVC -> TMS_SVC: Group orders by delivery cluster
+TMS_SVC -> AI_SVC: POST /vrp/optimize { orders, availableVehicles, depot }
+activate AI_SVC
+AI_SVC -> AI_SVC: Run Google OR-Tools Routing Model
+AI_SVC --> TMS_SVC: 200 OK (Optimized Vehicle Routes & Stop Order)
+deactivate AI_SVC
+
+TMS_SVC -> DB: INSERT INTO trips (status = 'ASSIGNED')
+TMS_SVC -> DB: INSERT INTO trip_stops (sequence = 1..N)
+TMS_SVC --> DRIVER: Push Notification: "New Trip Assigned - 15 Stops"
+deactivate TMS_SVC
+
+DRIVER -> TMS_SVC: POST /trips/:id/start
+TMS_SVC -> DB: UPDATE trips SET status = 'IN_TRANSIT'
+@enduml
+
+' =============================================================================
+' 9. SEQUENCE: REAL-TIME GPS TRACKING & GEOFENCING
+' =============================================================================
+@startuml seq-realtime-gps-tracking
+!theme plain
+autonumber
+skinparam defaultFontName "DejaVu Sans"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+
+title Sequence: Driver GPS Telemetry Ingestion & Geofencing Trigger
+
+actor "Driver App" as APP #EFF6FF
+participant "Go GPS Ingestion (:8080)" as GO_GPS #ECFDF5
+queue "Kafka / Redis" as KAFKA #FEE2E2
+participant "TMS Logistics Service" as TMS #EFF6FF
+participant "Dispatch Tower (Web)" as WEB #FEFCE8
+actor "Customer" as CUST #FDF2F8
+
+loop Every 5 seconds during active trip
+  APP -> GO_GPS: UDP/TCP Ping { driverId, tripId, lat: 10.7769, lng: 106.7009, speed: 42 }
+  activate GO_GPS
+  GO_GPS -> KAFKA: Publish 'gps.telemetry' event
+  GO_GPS -> KAFKA: HSET redis:driver:loc { lat, lng, lastSeen: now }
+  deactivate GO_GPS
+end
+
+KAFKA -> TMS: Consume 'gps.telemetry' event
+activate TMS
+TMS -> TMS: Compute distance to Next Stop Geofence (Radius: 200m)
+
+alt Within Geofence (< 200m to Customer Location)
+  TMS -> TMS: Flag Stop as "ARRIVING_SOON"
+  TMS -> CUST: Send SMS: "Your driver is 2 minutes away!"
+  TMS -> WEB: WebSocket emit 'geofence:enter' { stopId, tripId }
+else Outside Geofence
+  TMS -> WEB: WebSocket emit 'driver:position' { lat, lng }
+end
+deactivate TMS
+
+WEB -> WEB: Update Driver Marker Position on Leaflet Map
+@enduml
+
+' =============================================================================
+' 10. SEQUENCE: AI VRP ROUTE OPTIMIZATION
+' =============================================================================
+@startuml seq-ai-vrp-optimization
+!theme plain
+autonumber
+skinparam defaultFontName "DejaVu Sans"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+
+title Sequence: Multi-Vehicle VRP Optimization with Google OR-Tools
+
+actor "Dispatcher" as USER #EFF6FF
+participant "Next.js Tenant Portal" as FE #FEFCE8
+participant "Logistics Service (TMS)" as TMS #EFF6FF
+participant "FastAPI AI Service" as AI #FFF7ED
+participant "OSRM Distance Engine" as OSRM #FEF7E0
+database "PostgreSQL DB" as DB #E8F0FE
+
+USER -> FE: Clicks "Optimize Today's Fleet Dispatch"
+FE -> TMS: POST /api/v1/tms/routes/optimize { date: '2026-09-06' }
+
+activate TMS
+TMS -> DB: Query Unassigned Orders for Date (e.g. 50 orders)
+TMS -> DB: Query Available Active Fleet (e.g. 4 Vans, max 1000kg each)
+TMS -> AI: POST /vrp/optimize { depot, stops: [...], vehicles: [...] }
+
+activate AI
+AI -> OSRM: GET /table/v1/driving/{coordinates} (NxN Matrix)
+OSRM --> AI: Return NxN Distance & Duration Matrix
+
+AI -> AI: Initialize OR-Tools RoutingIndexManager
+AI -> AI: Add Vehicle Capacity Dimension (Max 1000kg)
+AI -> AI: Add Time Windows Dimension (08:00 - 18:00)
+AI -> AI: Solve with GUIDED_LOCAL_SEARCH (Timeout: 10s)
+AI -> AI: Format Output (Vehicle 1: 12 stops, Vehicle 2: 15 stops...)
+AI --> TMS: 200 OK { totalDistanceKm: 142.5, routes: [...] }
+deactivate AI
+
+TMS -> DB: Batch INSERT INTO trips and trip_stops
+TMS --> FE: 200 OK (Optimization Complete)
+deactivate TMS
+
+FE --> USER: Display Generated Routes on Leaflet Map with Color-coded Paths
+@enduml
+
+' =============================================================================
+' 11. SEQUENCE: WMS FIFO/FEFO PICKING & PDA SCANNING
+' =============================================================================
+@startuml seq-wms-fifo-picking
+!theme plain
+autonumber
+skinparam defaultFontName "DejaVu Sans"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+
+title Sequence: WMS Intelligent Allocation & PDA Laser Barcode Verification
+
+actor "Warehouse Operator (PDA)" as PDA #EFF6FF
+participant "Inventory Service (WMS)" as WMS #EFF6FF
+database "PostgreSQL DB" as DB #E8F0FE
+participant "Electronic Packing Scale" as SCALE #FEFCE8
+
+PDA -> WMS: GET /wms/tasks/next (Request Picking Assignment)
+activate WMS
+WMS -> DB: Query pending tasks ordered by Bin Location sequence
+DB --> WMS: Return Task: Pick 10x SKU-A from Bin A-02-01 (Lot: LOT2026, Exp: 2027)
+WMS --> PDA: Display Target Bin: "A-02-01", Product: "SKU-A", Qty: 10
+deactivate WMS
+
+PDA -> WMS: Scan Bin Barcode "BIN-A-02-01"
+activate WMS
+WMS -> WMS: Verify Bin matches target location
+WMS --> PDA: Bin Confirmed (Audio Beep)
+deactivate WMS
+
+PDA -> WMS: Scan Product Barcode "893500123456"
+activate WMS
+WMS -> WMS: Verify SKU matches Order Item
+WMS -> DB: UPDATE inventory SET reservedQuantity = reservedQuantity - 10, quantity = quantity - 10
+WMS -> DB: INSERT INTO stock_movements (fromBin = 'A-02-01', toBin = 'STAGING-PACK')
+WMS --> PDA: Picking Confirmed -> Move to Packing Station
+deactivate WMS
+
+PDA -> SCALE: Place carton on Electronic Scale
+SCALE --> PDA: Weight Stream: 4.85 kg (Expected: 4.80 kg +/- 2%)
+PDA -> WMS: POST /wms/pack-station/confirm { orderId, weight: 4.85 }
+WMS -> DB: UPDATE orders SET status = 'PACKED'
+WMS --> PDA: Print Shipping Label & Waybill
+@enduml
+
+' =============================================================================
+' 12. STATE MACHINE: ORDER & TRIP DUAL LIFECYCLE
+' =============================================================================
+@startuml state-order-trip-lifecycle
+!theme plain
+skinparam defaultFontName "DejaVu Sans"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+
+title State Machine - Order & TMS Delivery Trip Lifecycle
+
+state "Order Lifecycle" as ORDER_MACHINE {
+  [*] --> CREATED : Order placed by Client
+
+  state CREATED #EFF6FF : Awaiting warehouse wave allocation
+  state ALLOCATED #FEFCE8 : Inventory reserved in specific Bin
+  state PICKING #FFF7ED : Warehouse staff picking via PDA
+  state PACKED #E0E7FF : Weighed at pack station, label attached
+  state DISPATCHED #FED7AA : Loaded onto vehicle, trip started
+  state DELIVERED #DCFCE7 : Proof of delivery uploaded, COD collected
+  state FAILED #FEE2E2 : Customer unreachable or refused delivery
+  state RETURNED #F3F4F6 : Returned to warehouse quarantine bin
+
+  CREATED --> ALLOCATED : Wave picking generated
+  ALLOCATED --> PICKING : Operator scans bin
+  PICKING --> PACKED : Weight verified
+  PACKED --> DISPATCHED : Handed over to driver
+  DISPATCHED --> DELIVERED : POD signed
+  DISPATCHED --> FAILED : Delivery failed
+  FAILED --> DISPATCHED : Re-attempt next day
+  FAILED --> RETURNED : Exceeded 3 attempts
+}
+
+--
+
+state "TMS Trip Lifecycle" as TRIP_MACHINE {
+  [*] --> DRAFT : AI VRP route generated
+
+  state DRAFT #EFF6FF : Route stops computed
+  state ASSIGNED #FEFCE8 : Vehicle & Driver assigned
+  state IN_TRANSIT #FFF7ED : Driver started route, GPS streaming
+  state COMPLETED #DCFCE7 : All stops completed & COD reconciled
+  state CANCELLED #FEE2E2 : Fleet dispatcher aborted trip
+
+  DRAFT --> ASSIGNED : Dispatcher confirms trip
+  ASSIGNED --> IN_TRANSIT : Driver clicks 'Start Trip'
+  IN_TRANSIT --> COMPLETED : Final stop delivered
+  ASSIGNED --> CANCELLED : Cancelled by dispatcher
+}
+@enduml
+
+' =============================================================================
+' 13. STATE MACHINE: INVENTORY STOCK STATUS
+' =============================================================================
+@startuml state-inventory-movement
+!theme plain
+skinparam defaultFontName "DejaVu Sans"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+
+title State Machine - Warehouse Inventory & Stock Movement
+
+[*] --> INBOUND_RECEIVING : Goods arrive at receiving dock
+
+state INBOUND_RECEIVING #EFF6FF : Unloading & PO verification
+state QUARANTINE #FEFCE8 : Quality inspection & batch check
+state PUTAWAY_PENDING #FFF7ED : Assigned to destination Bin
+state AVAILABLE_IN_BIN #DCFCE7 : Active inventory ready for orders
+state RESERVED #FED7AA : Locked by active order wave
+state PICKED_STAGED #E0E7FF : Transferred to packing station
+state OUTBOUND_SHIPPED #F3F4F6 : Handed to carrier / vehicle
+
+INBOUND_RECEIVING --> QUARANTINE : Initial count verified
+QUARANTINE --> PUTAWAY_PENDING : Passed inspection
+QUARANTINE --> [*] : Rejected (Returned to vendor)
+
+PUTAWAY_PENDING --> AVAILABLE_IN_BIN : Operator scans Bin & drops item
+AVAILABLE_IN_BIN --> RESERVED : Order allocation lock (FIFO/FEFO)
+RESERVED --> AVAILABLE_IN_BIN : Order cancelled (Unlock)
+RESERVED --> PICKED_STAGED : PDA pick scan confirmed
+PICKED_STAGED --> OUTBOUND_SHIPPED : Parcel manifests to truck
+
+OUTBOUND_SHIPPED --> [*]
+@enduml
+
+' =============================================================================
+' 14. ACTIVITY FLOW: WAREHOUSE FULFILLMENT PIPELINE
+' =============================================================================
+@startuml activity-wms-fulfillment-pipeline
+!theme plain
+skinparam defaultFontName "DejaVu Sans"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+
+title Activity / Flow: End-to-End Warehouse Fulfillment Pipeline
+
+start
+
+:Purchase Order / Advance Shipping Notice (ASN) Arrives;
+:Scan Inbound Barcode & Validate Packing Slip;
+
+if (Quality Control Inspection Passed?) then (yes)
+  :Suggest Optimal Storage Bin based on Velocity (ABC Analysis);
+  :Operator transports pallet to Rack/Bin;
+  :Scan Destination Bin Barcode (Bin Locked into System);
+else (no)
+  :Move to Quarantine Area;
+  :Generate Return to Vendor (RTV) Notice;
+  stop
+endif
+
+:Orders stream in from B2B / B2C Customers;
+:Run Wave Allocation Engine (FIFO / FEFO Priority);
+
+fork
+  :Allocate Order Item 1 from Bin A-01-01;
+fork again
+  :Allocate Order Item 2 from Bin B-03-04;
+end fork
+
+:Generate Aggregated Pick List on Operator PDA;
+:Follow Optimized S-Shape Picking Path through Aisles;
+:Scan each Item Barcode to verify correct Lot & Expiry;
+
+:Deliver picked items to Packing Station;
+:Operator places carton on RS-232 Electronic Scale;
+:System checks: |Actual Weight - Master Weight| <= 2%;
+
+if (Weight within tolerance?) then (yes)
+  :Print Shipping Label, Waybill & Invoice;
+  :Affix Label to Parcel;
+  :Stage in Outbound Dispatch Lane;
+else (no)
+  :Flag Discrepancy (Missing or Extra Item);
+  :Alert Supervisor for manual inspection;
+  stop
+endif
+
+:Hand over Parcels to Assigned Vehicle Driver;
+:Scan Manifest Transfer Barcode;
+
+stop
+@enduml
+
+' =============================================================================
+' 15. WAREHOUSE HARDWARE & IOT INTEGRATION ARCHITECTURE
+' =============================================================================
+@startuml component-hardware-iot-integration
+!theme plain
+skinparam defaultFontName "DejaVu Sans"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam linetype ortho
+
+title Warehouse Hardware & IoT Edge Integration Architecture
+
+package "Physical Hardware Devices" #FAFAFA {
+  component "Electronic Packing Scale\n• RS-232 / USB Interface\n• Continuous Weight Stream (ASCII)" as HARDWARE_SCALE #FEFCE8
+  component "Industrial PDA Laser Scanner\n• Zebra / Honeywell Android OS\n• 1D/2D Barcode & QR Code Imager" as HARDWARE_PDA #FEFCE8
+}
+
+package "Browser Edge / Web APIs" #EFF6FF {
+  component "Web Serial API Bridge\n• navigator.serial.requestPort()\n• Baud Rate: 9600, 8N1\n• ReadableStream TextDecoder" as WEB_SERIAL #DBEAFE
+  component "HID Keystroke Interceptor\n• Fast keydown buffer (<50ms threshold)\n• Detects Barcode Enter key trigger" as HID_INTERCEPT #DBEAFE
+}
+
+package "Next.js Packing Station Client" #ECFDF5 {
+  component "useWebSerialScale React Hook\n• Auto-reconnect on port disconnect\n• Tare & Net Weight Parser\n• Weight Stability Filter" as HOOK_SCALE #A7F3D0
+  component "useBarcodeScanner React Hook\n• Cleans leading/trailing control chars\n• Dispatches SKU & Bin scan events" as HOOK_SCANNER #A7F3D0
+  component "Packing Station Screen UI\n• Real-time Weight Dial (+/- 2% Tolerance)\n• Visual & Audio Beeper Confirmation" as UI_PACK #A7F3D0
+}
+
+package "Backend WMS Engine (:3003)" #FFF7ED {
+  component "PackStationController\n• POST /wms/pack-station/verify-weight\n• POST /wms/pack-station/scan-item" as WMS_PACK_CTRL #FED7AA
+  component "Tolerance Validator\n• Master Product Spec vs Actual Weight\n• Tolerance Range: [-2%, +2%]" as TOLERANCE_VAL #FED7AA
+}
+
+HARDWARE_SCALE --> WEB_SERIAL : Serial data cable
+HARDWARE_PDA --> HID_INTERCEPT : Bluetooth / USB HID
+
+WEB_SERIAL --> HOOK_SCALE
+HID_INTERCEPT --> HOOK_SCANNER
+
+HOOK_SCALE --> UI_PACK
+HOOK_SCANNER --> UI_PACK
+
+UI_PACK --> WMS_PACK_CTRL : HTTP REST
+WMS_PACK_CTRL --> TOLERANCE_VAL
+@enduml
+
+' =============================================================================
+' 16. SEQUENCE: RMA CUSTOMER RETURN & WAREHOUSE INSPECTION
+' =============================================================================
+@startuml seq-rma-return-inspection
+!theme plain
+autonumber
+skinparam defaultFontName "DejaVu Sans"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+
+title Sequence: Customer Return Request (RMA) & Warehouse Inspection Flow
+
+actor "Customer" as CUST #EFF6FF
+participant "Customer Portal" as PORTAL #FEFCE8
+participant "Order Service (:3005)" as ORDER_SVC #EFF6FF
+participant "Inventory Service (WMS :3003)" as WMS_SVC #EFF6FF
+actor "Warehouse QA Inspector" as INSPECTOR #ECFDF5
+database "PostgreSQL DB" as DB #E8F0FE
+
+CUST -> PORTAL: Submit Return Request (RMA) { orderId, reason: "DAMAGED_BOX" }
+PORTAL -> ORDER_SVC: POST /orders/:id/returns
+activate ORDER_SVC
+ORDER_SVC -> DB: INSERT INTO return_requests (status = 'REQUESTED', reason = 'DAMAGED_BOX')
+ORDER_SVC --> PORTAL: 201 Created (Return Label Generated)
+deactivate ORDER_SVC
+
+== Parcel Arrives at Warehouse Receiving Dock ==
+
+INSPECTOR -> WMS_SVC: Scan Return Waybill Barcode
+activate WMS_SVC
+WMS_SVC -> DB: UPDATE return_requests SET status = 'RECEIVED_AT_WH'
+WMS_SVC --> INSPECTOR: Display Order Items to Inspect
+deactivate WMS_SVC
+
+INSPECTOR -> WMS_SVC: POST /wms/returns/:id/inspect\n{ grade: 'A_RESALABLE', restockBin: 'BIN-B-01-04' }
+activate WMS_SVC
+WMS_SVC -> DB: INSERT INTO return_inspections (grade = 'A_RESALABLE', inspectedBy = inspectorId)
+alt Grade is Resalable (Grade A/B)
+  WMS_SVC -> DB: UPDATE inventory SET quantity = quantity + 1 WHERE binId = 'BIN-B-01-04'
+  WMS_SVC -> DB: INSERT INTO stock_movements (type = 'RETURN_RESTOCK', toBin = 'BIN-B-01-04')
+  WMS_SVC -> DB: UPDATE return_requests SET status = 'RESTOCKED'
+else Grade is Defective / Scrap (Grade C)
+  WMS_SVC -> DB: INSERT INTO stock_movements (type = 'SCRAP', toBin = 'BIN-QUARANTINE-SCRAP')
+  WMS_SVC -> DB: UPDATE return_requests SET status = 'SCRAPPED'
+end
+
+WMS_SVC -> ORDER_SVC: POST /orders/:id/refund-approved
+ORDER_SVC -> DB: UPDATE orders SET status = 'REFUNDED'
+WMS_SVC --> INSPECTOR: Inspection Completed & Stock Updated
+deactivate WMS_SVC
+@enduml
+
+' =============================================================================
+' 17. SEQUENCE: DRIVER COD REMITTANCE & EXPENSE RECONCILIATION
+' =============================================================================
+@startuml seq-cod-driver-reconciliation
+!theme plain
+autonumber
+skinparam defaultFontName "DejaVu Sans"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+
+title Sequence: Driver Cash on Delivery (COD) Remittance & Expense Audit
+
+actor "Driver" as DRIVER #EFF6FF
+participant "Driver Mobile App" as APP #FEFCE8
+participant "Logistics Service (TMS :3004)" as TMS #EFF6FF
+actor "Cashier / Dispatcher" as CASHIER #FEFCE8
+database "PostgreSQL DB" as DB #E8F0FE
+
+DRIVER -> APP: Completes Trip & Navigates to "End of Day Settlement"
+APP -> TMS: GET /trips/:id/cod-summary
+activate TMS
+TMS -> DB: SUM(codAmount) for all DELIVERED stops
+DB --> TMS: Expected Cash: 12,500,000 VND
+TMS --> APP: Return Expected COD: 12,500,000 VND
+deactivate TMS
+
+DRIVER -> APP: Upload Fuel & Toll Receipts (Expense: 350,000 VND)
+APP -> TMS: POST /trips/:id/expenses { category: 'FUEL', amount: 350000, receiptUrl: '...' }
+activate TMS
+TMS -> DB: INSERT INTO driver_expenses (amount = 350000, status = 'PENDING_APPROVAL')
+TMS --> APP: Expense Submitted
+deactivate TMS
+
+== Handover at Warehouse Cashier Desk ==
+
+DRIVER -> CASHIER: Hands over physical cash (12,150,000 VND net after fuel)
+CASHIER -> TMS: POST /trips/:id/reconcile-cod\n{ collectedCash: 12150000, approvedExpenses: 350000 }
+activate TMS
+TMS -> TMS: Verify: collectedCash + approvedExpenses == expectedCod
+TMS -> DB: INSERT INTO cod_remittances (status = 'RECONCILED', amount = 12150000)
+TMS -> DB: UPDATE driver_expenses SET status = 'APPROVED'
+TMS -> DB: UPDATE trips SET status = 'COMPLETED'
+TMS --> CASHIER: Settlement Receipt Generated (Zero Discrepancy)
+deactivate TMS
+
+CASHIER --> DRIVER: Printed Clearance Slip & Sign-Off
+@enduml
+
+' =============================================================================
+' 18. SEQUENCE: CYCLE COUNTING & STOCK ADJUSTMENT
+' =============================================================================
+@startuml seq-cycle-count-adjustment
+!theme plain
+autonumber
+skinparam defaultFontName "DejaVu Sans"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+
+title Sequence: Periodic Warehouse Cycle Counting & Stock Discrepancy Adjustment
+
+actor "Warehouse Operator" as OPERATOR #EFF6FF
+participant "PDA Terminal" as PDA #FEFCE8
+participant "Inventory Service (WMS :3003)" as WMS #EFF6FF
+actor "Warehouse Manager" as MANAGER #FEFCE8
+database "PostgreSQL DB" as DB #E8F0FE
+
+WMS -> DB: Schedule weekly ABC Cycle Count for Zone A (Racks 01 to 05)
+OPERATOR -> PDA: Open "Blind Cycle Count" Task
+PDA -> WMS: GET /wms/cycle-counts/pending
+activate WMS
+WMS --> PDA: Return Target: Count Bin A-01-02 (SKU not revealed to prevent bias)
+deactivate WMS
+
+OPERATOR -> PDA: Scans Bin A-01-02 & Counts physical items (Count: 42 units)
+PDA -> WMS: POST /wms/cycle-counts/submit { binId: 'A-01-02', countedQuantity: 42 }
+activate WMS
+
+WMS -> DB: SELECT quantity FROM inventory WHERE binId = 'A-01-02'
+DB --> WMS: System Quantity: 45 units (Discrepancy: -3 units, Loss: 750,000 VND)
+
+alt Variance within Auto-Approve Threshold (< 1 unit)
+  WMS -> DB: Auto-adjust inventory to 42
+else Variance Exceeds Threshold (Delta: -3 units)
+  WMS -> DB: INSERT INTO adjustments\n(binId = 'A-01-02', systemQty = 45, countedQty = 42, status = 'PENDING_APPROVAL')
+  WMS --> MANAGER: Alert: "Stock Variance at Bin A-01-02 requires Manager Approval"
+end
+deactivate WMS
+
+MANAGER -> WMS: PATCH /wms/adjustments/:id/approve { reasonCode: 'DAMAGED_IN_RACK' }
+activate WMS
+WMS -> DB: UPDATE inventory SET quantity = 42 WHERE binId = 'A-01-02'
+WMS -> DB: INSERT INTO stock_movements (type = 'COUNT_ADJUSTMENT', quantity = -3)
+WMS -> DB: UPDATE adjustments SET status = 'APPROVED', approvedBy = managerId
+WMS --> MANAGER: Stock Adjusted & Audit Trail Logged
+deactivate WMS
+@enduml
+
+' =============================================================================
+' 19. STATE MACHINE: CUSTOMER RETURN (RMA) LIFECYCLE
+' =============================================================================
+@startuml state-return-lifecycle
+!theme plain
+skinparam defaultFontName "DejaVu Sans"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+
+title State Machine - Customer Return (RMA) Request Lifecycle
+
+[*] --> REQUESTED : Customer files return request
+
+state REQUESTED #EFF6FF : Awaiting customer service review\nPhoto evidence submitted
+
+state APPROVED #FEFCE8 : Return authorization issued\nPre-paid shipping label sent
+
+state IN_TRANSIT #FFF7ED : Parcel shipped back by carrier\nTracking active
+
+state RECEIVED_AT_WH #E0E7FF : Arrived at warehouse dock\nQueued for QA inspection
+
+state INSPECTED #DCFCE7 : Condition grading complete\n(A: Resalable, B: Repack, C: Scrap)
+
+state RESTOCKED #DCFCE7 : Putaway to active pick bin\nInventory restored
+
+state SCRAPPED #FEE2E2 : Written off as damaged/defective\nMoved to scrap bin
+
+state REJECTED #F3F4F6 : Claim rejected (Expired window / Ineligible)
+
+REQUESTED --> APPROVED : CS approves claim
+REQUESTED --> REJECTED : Claim rejected
+
+APPROVED --> IN_TRANSIT : Customer drops at post office
+IN_TRANSIT --> RECEIVED_AT_WH : Warehouse driver unloads parcel
+
+RECEIVED_AT_WH --> INSPECTED : QA inspector grades unit
+INSPECTED --> RESTOCKED : Grade A / B (Good condition)
+INSPECTED --> SCRAPPED : Grade C (Defective / Broken)
+
+RESTOCKED --> [*]
+SCRAPPED --> [*]
+REJECTED --> [*]
+@enduml
+
+' =============================================================================
+' 20. COMPONENT: MULTI-TENANCY SCHEMA ISOLATION & KONG GATEWAY
+' =============================================================================
+@startuml component-multitenancy-isolation
+!theme plain
+skinparam defaultFontName "DejaVu Sans"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam linetype ortho
+
+title Multi-Tenancy Dynamic Schema Isolation & Kong Gateway Architecture
+
+package "Client Edge & Kong API Gateway" #F8FAFC {
+  component "HTTP Request Header\n• Host: tenant-a.smartlogi.vn\n• Header: x-tenant-id: tenant_alpha_01\n• Bearer JWT Token" as REQ_HEADER #EFF6FF
+  component "Kong Ingress Gateway\n• Key-Auth Plugin / JWT Plugin\n• Extracts Tenant Slug & Subdomain\n• Injects 'x-tenant-schema: tenant_a_db'" as KONG_TENANT #EFF6FF
+}
+
+package "NestJS Scope.REQUEST Architecture" #FFFFFF {
+  component "TenantResolverMiddleware\n• Resolves active tenant from header/host\n• Injects schemaName into Request Context" as TENANT_MIDDLEWARE #EFF6FF
+  component "PrismaService (@Inject(REQUEST))\n[Scope.REQUEST Isolation]\n• Custom $extends client wrapper\n• SET search_path TO '${schemaName}', public" as PRISMA_EXT #FED7AA
+}
+
+package "PostgreSQL 16 Multi-Tenant Database" #E8F0FE {
+  database "PostgreSQL Instance" as PG_MULTI {
+    frame "public Schema\n• SystemAdmin, SubscriptionPlan, Tenant" as SCHEMA_PUB #FFFFFF
+    frame "tenant_a Schema\n• Warehouse, Zone, Bin, Inventory, Order" as SCHEMA_A #FFFFFF
+    frame "tenant_b Schema\n• Warehouse, Zone, Bin, Inventory, Order" as SCHEMA_B #FFFFFF
+  }
+}
+
+REQ_HEADER --> KONG_TENANT
+KONG_TENANT --> TENANT_MIDDLEWARE : Proxied HTTP Request
+TENANT_MIDDLEWARE --> PRISMA_EXT : Sets request.schemaName = 'tenant_a'
+PRISMA_EXT --> SCHEMA_A : Query executed within tenant_a isolated search_path
+PRISMA_EXT ..> SCHEMA_PUB : Joins global subscriptions
+@enduml
+
+' =============================================================================
+' 21. SEQUENCE: DRIVER SOS EMERGENCY ALERT WORKFLOW
+' =============================================================================
+@startuml seq-driver-sos-emergency
+!theme plain
+autonumber
+skinparam defaultFontName "DejaVu Sans"
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam shadowing false
+
+title Sequence: Driver SOS Panic Button & Emergency Dispatch Protocol
+
+actor "Driver" as DRIVER #EFF6FF
+participant "Driver Mobile App" as APP #FEFCE8
+participant "Go GPS Ingestion (:8080)" as GO_GPS #ECFDF5
+queue "Kafka Topic ('alerts.sos')" as KAFKA #FEE2E2
+participant "TMS Logistics Service (:3004)" as TMS #EFF6FF
+database "PostgreSQL DB" as DB #E8F0FE
+participant "Dispatch Tower (Web)" as WEB #FEFCE8
+actor "Fleet Supervisor" as DISPATCHER #FEFCE8
+
+DRIVER -> APP: Presses Emergency SOS Panic Button (Hold 3s)
+activate APP
+APP -> APP: Vibrate & Capture Precise GPS Coordinates (Lat: 10.7812, Lng: 106.6982)
+APP -> GO_GPS: POST /api/v1/telemetry/sos { driverId, tripId, lat, lng, severity: 'CRITICAL', reason: 'ACCIDENT' }
+deactivate APP
+
+activate GO_GPS
+GO_GPS -> KAFKA: Publish 'alerts.sos' Event with High Priority
+deactivate GO_GPS
+
+KAFKA -> TMS: Consume 'alerts.sos' Event
+activate TMS
+TMS -> DB: INSERT INTO sos_alerts (driverId, tripId, latitude, longitude, status = 'ACTIVE', severity = 'CRITICAL')
+TMS -> DB: UPDATE trips SET status = 'EMERGENCY_HOLD' WHERE id = tripId
+
+TMS -> WEB: WebSocket Emit 'sos:broadcast' { alertId, driverName, phone, lat, lng, vehiclePlate }
+deactivate TMS
+
+activate WEB
+WEB -> WEB: Flash Red Screen Overlay & Trigger Auditory Siren
+WEB -> WEB: Center Leaflet Map on Driver GPS Marker & Show Emergency Rescue Route
+deactivate WEB
+
+DISPATCHER -> WEB: Acknowledges Alert & Calls Driver / Local Emergency (115/113)
+DISPATCHER -> TMS: PATCH /sos-alerts/:id/resolve { status: 'RESOLVED', actionTaken: 'Ambulance dispatched' }
+TMS -> DB: UPDATE sos_alerts SET status = 'RESOLVED', resolvedAt = now(), resolvedById = dispatcherId
+TMS -> APP: Push Notification: "Rescue protocol activated. Help is on the way."
+@enduml
+
+

@@ -1,0 +1,31 @@
+{
+  "name": "prisma-schemas",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "echo 'prisma-schemas ready'",
+    "seed": "ts-node prisma/seeds/index.ts",
+    "seed:lite": "ts-node prisma/seeds/index.ts",
+    "build": "tsc",
+    "migrate:deploy": "prisma migrate deploy",
+    "migrate:dev": "prisma migrate dev",
+    "db:push": "prisma db push",
+    "db:push:force": "prisma db push --accept-data-loss",
+    "test:tenant-isolation": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f prisma/tests/tenant-isolation.sql"
+  },
+  "devDependencies": {
+    "@faker-js/faker": "^8.4.1",
+    "@types/bcrypt": "^5.0.2",
+    "@types/node": "^20.12.7",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  },
+  "dependencies": {
+    "@prisma/client": "5.18.0",
+    "prisma": "5.18.0",
+    "bcrypt": "^5.1.1"
+  },
+  "prisma": {
+    "seed": "ts-node prisma/seeds/index.ts"
+  }
+}
