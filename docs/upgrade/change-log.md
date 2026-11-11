@@ -1,0 +1,7 @@
+# Nhật ký thay đổi (`change-log.md`)
+
+Mỗi dòng ghi theo trình tự thời gian sau từng nhóm commit/kiểm thử.
+
+- **2026-11-11 — Gate G0 & G1 (Baseline):** Khởi tạo DB local PostgreSQL 18.1 + PostGIS 3.6 + Redis trên `127.0.0.1:5432` & `:6379`. Áp 5 migrations Prisma, xác nhận RLS SQL pass, `wms-engine` 21 tests, `api-gateway` 11 tests, `core-api` 67 tests, `ai-worker` 42 tests, `static-verify.py` 0 lỗi, kiểm tra tài khoản Vercel CLI `lovemvaf` với team `visionary19` (`hobby`).
+- **2026-11-11 — Gate G2 (Tracking Matrix & ADRs):** Tạo `docs/upgrade/enterprise-execution-matrix.csv`, `docs/upgrade/implementation-plan.md`, `docs/upgrade/evidence-ledger.md`, `docs/upgrade/change-log.md`.
+- **2026-11-11 — Gate G3 (P0/P1 Security & Reliability Hardening):** Áp migration `20261111120000_hardening_outbox_idempotency_rls` + RLS SQL pass; thêm Outbox lease reclaim & `emitAsync`, IdempotencyInterceptor lưu Postgres kèm SHA-256 conflict `409`, canonical v2 HMAC & tách `GPS_UDP_HMAC_SECRET`, SSRF `DialContext` IP-pinning & Redis Streams + DLQ/redrive & gỡ `/api/v1/inbound/webhooks` khỏi `PUBLIC_PATHS`, `helmet` + CORS headers, CSPRNG & pre-flight `SYNCING` checkpoint cho mobile offline-sync, làm mờ tọa độ & bỏ `shippingFee` trên `/public/track`, nâng Node 20 lên Node 22 LTS trên CI & Dockerfiles. Kiểm chứng local PASS (`core-api` 71/71, `api-gateway` 11/11, `wms-engine` 21/21, `static-verify.py` 0 lỗi).

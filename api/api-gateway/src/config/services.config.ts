@@ -188,7 +188,7 @@ export const PUBLIC_PATHS = [
   '/routes',
   '/api/docs',
   '/api/gateway/health',
-  // Public tracking + partner callbacks.
+  // Public tracking + external payment webhooks (inbound webhook worker requires auth).
   '/api/v1/public',
   // Thiết bị GPS dùng GPS_AUTH_TOKEN (xác thực tại chính gps-ingestion-service)
   // nên không được chặn bằng JWT ở edge.
@@ -196,7 +196,6 @@ export const PUBLIC_PATHS = [
   '/api/v1/track',
   '/api/v1/health',
   '/api/v1/webhooks/stripe',
-  '/api/v1/inbound/webhooks',
   // Login / password recovery must be reachable before a token exists.
   '/api/v1/tenant/auth',
   '/api/v1/admin/auth',

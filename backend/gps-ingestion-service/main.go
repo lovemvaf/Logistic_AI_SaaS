@@ -31,6 +31,7 @@ var (
 
 	replayMu    sync.Mutex
 	replayCache = map[string]int64{}
+	replayOrder []string
 
 	sosCooldownMu sync.Mutex
 	sosCooldown   = map[string]time.Time{}
@@ -58,6 +59,9 @@ func isValidGPSPoint(pt GPSPoint) bool {
 	if math.IsNaN(pt.Speed) || math.IsInf(pt.Speed, 0) || pt.Speed < 0 || pt.Speed > 150 {
 		return false
 	}
+	if math.IsNaN(pt.Heading) || math.IsInf(pt.Heading, 0) || pt.Heading < 0 || pt.Heading >= 360 {
+		return false
+	}
 	return pt.DriverID != ""
 }
 
@@ -73,11 +77,63 @@ type SignedUDPPacket struct {
 	Signature string    `json:"signature,omitempty"`
 }
 
+func effectiveUDPSecret() string {
+	if gpsUdpHmacSecret != "" {
+		return gpsUdpHmacSecret
+	}
+	return gpsAuthToken
+}
+
+// computeUDPSignature computes canonical HMAC-SHA256 over packet envelope and
+// all business telemetry fields to prevent partial-field tampering (speed/heading/trip).
 func computeUDPSignature(secret string, ts int64, nonce string, pt GPSPoint) string {
-	canonical := fmt.Sprintf("%d:%s:%s:%.6f:%.6f", ts, nonce, pt.DriverID, pt.Lat, pt.Lng)
+	canonical := fmt.Sprintf(
+		"v2|%d|%s|%s|%s|%.6f|%.6f|%.2f|%.2f|%t",
+		ts,
+		nonce,
+		pt.DriverID,
+		pt.TripID,
+		pt.Lat,
+		pt.Lng,
+		pt.Speed,
+		pt.Heading,
+		pt.IsOfflineCached,
+	)
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(canonical))
 	return hex.EncodeToString(mac.Sum(nil))
+}
+
+func recordUDPNonce(replayKey string, nowUnix int64) bool {
+	replayMu.Lock()
+	defer replayMu.Unlock()
+
+	// Evict only expired nonces or oldest FIFO entries without flushing active cache.
+	if len(replayOrder) > 0 {
+		kept := replayOrder[:0]
+		for _, k := range replayOrder {
+			if exp, ok := replayCache[k]; ok && exp >= nowUnix {
+				kept = append(kept, k)
+			} else {
+				delete(replayCache, k)
+			}
+		}
+		replayOrder = kept
+	}
+
+	if exp, seen := replayCache[replayKey]; seen && exp >= nowUnix {
+		return false
+	}
+
+	for len(replayCache) >= udpReplayMaxEntries && len(replayOrder) > 0 {
+		oldest := replayOrder[0]
+		replayOrder = replayOrder[1:]
+		delete(replayCache, oldest)
+	}
+
+	replayCache[replayKey] = nowUnix + udpReplayWindowSeconds
+	replayOrder = append(replayOrder, replayKey)
+	return true
 }
 
 func verifyUDPPacket(data []byte, now time.Time) (GPSPoint, error) {
@@ -85,6 +141,9 @@ func verifyUDPPacket(data []byte, now time.Time) (GPSPoint, error) {
 	if err := json.Unmarshal(data, &pkt); err == nil && pkt.Point != nil {
 		if pkt.Signature == "" || pkt.Nonce == "" || pkt.Timestamp == 0 {
 			return GPSPoint{}, errors.New("missing UDP HMAC metadata")
+		}
+		if !isValidGPSPoint(*pkt.Point) {
+			return GPSPoint{}, errors.New("invalid GPS point coordinates or telemetry bounds")
 		}
 		nowUnix := now.Unix()
 		diff := nowUnix - pkt.Timestamp
@@ -95,7 +154,7 @@ func verifyUDPPacket(data []byte, now time.Time) (GPSPoint, error) {
 			return GPSPoint{}, errors.New("UDP packet timestamp outside replay window")
 		}
 
-		expectedSig := computeUDPSignature(gpsAuthToken, pkt.Timestamp, pkt.Nonce, *pkt.Point)
+		expectedSig := computeUDPSignature(effectiveUDPSecret(), pkt.Timestamp, pkt.Nonce, *pkt.Point)
 		providedBytes, decErr := hex.DecodeString(pkt.Signature)
 		expectedBytes, _ := hex.DecodeString(expectedSig)
 		if decErr != nil || !hmac.Equal(providedBytes, expectedBytes) {
@@ -103,23 +162,17 @@ func verifyUDPPacket(data []byte, now time.Time) (GPSPoint, error) {
 		}
 
 		replayKey := fmt.Sprintf("%s:%s", pkt.Point.DriverID, pkt.Nonce)
-		replayMu.Lock()
-		for k, exp := range replayCache {
-			if exp < nowUnix || len(replayCache) >= udpReplayMaxEntries {
-				delete(replayCache, k)
-			}
-		}
-		if _, seen := replayCache[replayKey]; seen {
-			replayMu.Unlock()
+		if !recordUDPNonce(replayKey, nowUnix) {
 			return GPSPoint{}, errors.New("replayed UDP packet")
 		}
-		replayCache[replayKey] = nowUnix + udpReplayWindowSeconds
-		replayMu.Unlock()
 
 		return *pkt.Point, nil
 	}
 
 	if os.Getenv("GPS_UDP_ALLOW_LEGACY_UNAUTHENTICATED") == "true" {
+		if os.Getenv("APP_ENV") == "production" || os.Getenv("NODE_ENV") == "production" {
+			return GPSPoint{}, errors.New("legacy unauthenticated UDP packets are forbidden in production")
+		}
 		var pt GPSPoint
 		if err := json.Unmarshal(data, &pt); err != nil {
 			return GPSPoint{}, err
@@ -216,6 +269,7 @@ type BatchRequest struct {
 var dbPool *pgxpool.Pool
 var schemaName string
 var gpsAuthToken string
+var gpsUdpHmacSecret string
 
 func initDB() {
 	schemaName = os.Getenv("DB_SCHEMA")
@@ -229,6 +283,17 @@ func initDB() {
 	gpsAuthToken = os.Getenv("GPS_AUTH_TOKEN")
 	if gpsAuthToken == "" {
 		log.Fatal("GPS_AUTH_TOKEN environment variable is required. Set a strong auth token for production.")
+	}
+
+	gpsUdpHmacSecret = os.Getenv("GPS_UDP_HMAC_SECRET")
+	isProd := os.Getenv("APP_ENV") == "production" || os.Getenv("NODE_ENV") == "production"
+	if gpsUdpHmacSecret == "" {
+		if isProd {
+			log.Fatal("GPS_UDP_HMAC_SECRET environment variable is required in production and must be distinct from GPS_AUTH_TOKEN.")
+		}
+		log.Println("WARNING: GPS_UDP_HMAC_SECRET not set; falling back to GPS_AUTH_TOKEN in non-production mode")
+	} else if gpsUdpHmacSecret == gpsAuthToken && isProd {
+		log.Fatal("GPS_UDP_HMAC_SECRET must be distinct from GPS_AUTH_TOKEN in production.")
 	}
 
 	dbURL := os.Getenv("DATABASE_URL")

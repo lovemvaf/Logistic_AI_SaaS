@@ -1,11 +1,13 @@
 import { Injectable, Inject, Logger, OnModuleInit, Optional } from '@nestjs/common';
 import { ClientKafka } from '@nestjs/microservices';
+import { isObservable, lastValueFrom, timeout } from 'rxjs';
 
 /**
  * Producer Kafka dùng chung (module Orders + outbox dispatcher).
  *
- * Nếu Kafka chưa kết nối được, event được đẩy vào buffer bộ nhớ để không
- * làm hỏng luồng nghiệp vụ.
+ * OutboxDispatcher phải dùng `emitAsync()` để chờ broker ACK thật sự trước
+ * khi đánh dấu event `SENT`. Hàm `emit()` đồng bộ được giữ cho caller không
+ * chặn UI nhưng không được giả danh ACK bền vững.
  */
 @Injectable()
 export class KafkaEventService implements OnModuleInit {
@@ -19,7 +21,7 @@ export class KafkaEventService implements OnModuleInit {
 
   async onModuleInit() {
     if (!this.kafkaClient) {
-      this.logger.warn('Kafka client not registered. Events will be buffered in memory.');
+      this.logger.warn('Kafka client not registered. Outbox events will stay PENDING until Kafka is available.');
       return;
     }
     try {
@@ -35,15 +37,37 @@ export class KafkaEventService implements OnModuleInit {
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Unknown error';
-      this.logger.warn(`Failed to connect to Kafka: ${msg}. Events will be buffered in memory.`);
+      this.logger.warn(`Failed to connect to Kafka: ${msg}.`);
+    }
+  }
+
+  /**
+   * Awaited publish waiting for Kafka producer acknowledgement.
+   * Throws loudly when broker is disconnected or times out so Outbox retries safely.
+   */
+  async emitAsync(topic: string, message: any, ackTimeoutMs = 10000): Promise<void> {
+    if (!this.kafkaClient || !this.connected) {
+      throw new Error(`Kafka broker disconnected — refusing unacknowledged publish for topic ${topic}`);
+    }
+    const payload = typeof message === 'string' ? message : JSON.stringify(message);
+    const result: unknown = this.kafkaClient.emit(topic, payload);
+    if (isObservable(result)) {
+      await lastValueFrom(result.pipe(timeout(ackTimeoutMs)));
+    } else if (result && typeof (result as PromiseLike<unknown>).then === 'function') {
+      await Promise.race([
+        result as Promise<unknown>,
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error(`Kafka ACK timeout after ${ackTimeoutMs}ms`)), ackTimeoutMs),
+        ),
+      ]);
     }
   }
 
   emit(topic: string, message: any): void {
-    const payload = JSON.stringify(message);
+    const payload = typeof message === 'string' ? message : JSON.stringify(message);
     if (!this.kafkaClient || !this.connected) {
       this.eventBuffer.push({ topic, message: payload });
-      this.logger.warn(`Kafka not connected — buffered event: ${topic}`);
+      this.logger.warn(`Kafka not connected — buffered non-outbox event: ${topic}`);
       return;
     }
     try {

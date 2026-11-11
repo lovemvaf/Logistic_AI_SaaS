@@ -82,12 +82,12 @@ export class TenantAuditLogsController {
       throw new ForbiddenException("Tenant context is required for tenant audit logs");
     }
 
-    const results: any[] = await this.prisma.$queryRaw`
-      SELECT DISTINCT action
-      FROM system_audit_logs
-      WHERE tenant_id = ${tenantId}
-      ORDER BY action
-    `;
-    return results.map((r: any) => r.action);
+    const rows = await this.prisma.getTenantDb().systemAuditLog.findMany({
+      where: { tenantId },
+      distinct: ["action"],
+      select: { action: true },
+      orderBy: { action: "asc" },
+    });
+    return rows.map((r: any) => r.action);
   }
 }

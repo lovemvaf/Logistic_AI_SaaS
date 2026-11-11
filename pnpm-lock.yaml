@@ -111,6 +111,9 @@ importers:
       dotenv:
         specifier: ^17.4.2
         version: 17.4.2
+      helmet:
+        specifier: ^8.2.0
+        version: 8.2.0
       ioredis:
         specifier: ^5.4.1
         version: 5.10.1

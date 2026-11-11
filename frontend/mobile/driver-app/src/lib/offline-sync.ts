@@ -11,12 +11,14 @@ export enum SyncStatus {
 
 export interface SyncAction {
   id: string;
+  sequence: number;
   table: string;
   action: 'CREATE' | 'UPDATE' | 'DELETE';
   payload: any;
   status: SyncStatus;
   retryCount: number;
   nextAttemptAt?: number;
+  lastAttemptAt?: number;
   lastError?: string;
   createdAt: number;
 }
@@ -32,13 +34,44 @@ export interface SyncResult {
 const STORAGE_KEY = 'offline_sync_queue';
 const MAX_RETRY_COUNT = 5;
 const BATCH_SIZE = 10;
+let monotonicSeq = 0;
 
 function generateId(): string {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === 'x' ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
+  const gCrypto: any = typeof globalThis !== 'undefined' ? (globalThis as any).crypto : undefined;
+  if (gCrypto && typeof gCrypto.randomUUID === 'function') {
+    return gCrypto.randomUUID();
+  }
+  if (gCrypto && typeof gCrypto.getRandomValues === 'function') {
+    const bytes = new Uint8Array(16);
+    gCrypto.getRandomValues(bytes);
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  }
+  // Fallback when global WebCrypto is unavailable in stripped test runtimes: monotonic sequence + hrtime
+  monotonicSeq += 1;
+  const tsHex = Date.now().toString(16).padStart(12, '0');
+  const seqHex = monotonicSeq.toString(16).padStart(8, '0');
+  return `${tsHex.slice(0, 8)}-${tsHex.slice(8, 12)}-4000-8000-${seqHex}0000`;
+}
+
+function nextMonotonicSequence(existing: SyncAction[]): number {
+  const maxExisting = existing.reduce((m, item) => Math.max(m, Number(item.sequence || 0)), 0);
+  monotonicSeq = Math.max(monotonicSeq + 1, Date.now(), maxExisting + 1);
+  return monotonicSeq;
+}
+
+function backoffWithJitterMs(retryCount: number): number {
+  const base = Math.min(300_000, 1000 * 2 ** retryCount);
+  const gCrypto: any = typeof globalThis !== 'undefined' ? (globalThis as any).crypto : undefined;
+  let ratio = 0.15;
+  if (gCrypto && typeof gCrypto.getRandomValues === 'function') {
+    const arr = new Uint32Array(1);
+    gCrypto.getRandomValues(arr);
+    ratio = (arr[0] % 250) / 1000;
+  }
+  return Math.round(base * (1 + ratio));
 }
 
 function isPermanentClientError(error: any): boolean {
@@ -48,8 +81,10 @@ function isPermanentClientError(error: any): boolean {
 
 export class OfflineSyncEngine {
   static createAction(table: string, action: 'CREATE' | 'UPDATE' | 'DELETE', payload: any): SyncAction {
+    monotonicSeq = Math.max(monotonicSeq + 1, Date.now());
     return {
       id: generateId(),
+      sequence: monotonicSeq,
       table,
       action,
       payload,
@@ -68,22 +103,56 @@ export class OfflineSyncEngine {
     }
   }
 
+  static async saveQueue(queue: SyncAction[]): Promise<void> {
+    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(queue));
+  }
+
   static async addToQueue(action: SyncAction): Promise<void> {
     const queue = await OfflineSyncEngine.getQueue();
+    if (!action.sequence) {
+      action.sequence = nextMonotonicSequence(queue);
+    }
     queue.push(action);
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(queue));
+    await OfflineSyncEngine.saveQueue(queue);
   }
 
   static async addActionsToQueue(actions: SyncAction[]): Promise<void> {
     const queue = await OfflineSyncEngine.getQueue();
-    queue.push(...actions);
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(queue));
+    for (const action of actions) {
+      if (!action.sequence) {
+        action.sequence = nextMonotonicSequence(queue);
+      }
+      queue.push(action);
+    }
+    await OfflineSyncEngine.saveQueue(queue);
+  }
+
+  static async retryDeadLetter(actionId: string): Promise<boolean> {
+    const queue = await OfflineSyncEngine.getQueue();
+    let found = false;
+    const updated = queue.map((a) => {
+      if (a.id === actionId && (a.status === SyncStatus.DEAD_LETTER || a.status === SyncStatus.FAILED)) {
+        found = true;
+        return {
+          ...a,
+          status: SyncStatus.PENDING,
+          retryCount: 0,
+          nextAttemptAt: undefined,
+          lastError: undefined,
+        };
+      }
+      return a;
+    });
+    if (found) {
+      await OfflineSyncEngine.saveQueue(updated);
+    }
+    return found;
   }
 
   static async clearCompleted(): Promise<void> {
     const queue = await OfflineSyncEngine.getQueue();
     const active = queue.filter((a) => a.status !== SyncStatus.COMPLETED);
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(active));
+    await OfflineSyncEngine.saveQueue(active);
   }
 
   static async syncAll(): Promise<SyncResult> {
@@ -95,24 +164,37 @@ export class OfflineSyncEngine {
       errors: [],
     };
     const now = Date.now();
-    let queue = await OfflineSyncEngine.getQueue();
-    const runnable = queue.filter(
-      (a) =>
-        a.status !== SyncStatus.COMPLETED &&
-        a.status !== SyncStatus.DEAD_LETTER &&
-        a.retryCount < MAX_RETRY_COUNT &&
-        (!a.nextAttemptAt || a.nextAttemptAt <= now),
-    );
+    const queue = await OfflineSyncEngine.getQueue();
+    const runnable = queue
+      .filter(
+        (a) =>
+          a.status !== SyncStatus.COMPLETED &&
+          a.status !== SyncStatus.DEAD_LETTER &&
+          a.retryCount < MAX_RETRY_COUNT &&
+          (!a.nextAttemptAt || a.nextAttemptAt <= now),
+      )
+      .sort((a, b) => (a.sequence || a.createdAt) - (b.sequence || b.createdAt));
+
     if (runnable.length === 0) return result;
 
     const batch = runnable.slice(0, BATCH_SIZE);
 
     for (const action of batch) {
+      // Persist SYNCING checkpoint BEFORE sending HTTP mutation (crash-safe)
+      action.status = SyncStatus.SYNCING;
+      action.lastAttemptAt = Date.now();
+      const preflightQueue = await OfflineSyncEngine.getQueue();
+      await OfflineSyncEngine.saveQueue(
+        preflightQueue.map((item) => (item.id === action.id ? { ...action } : item)),
+      );
+
       try {
-        action.status = SyncStatus.SYNCING;
         const method = action.action === 'DELETE' ? 'DELETE' : action.action === 'CREATE' ? 'POST' : 'PATCH';
         let requestData = action.action !== 'DELETE' ? action.payload : undefined;
-        const headers: Record<string, string> = { 'X-Sync-Id': action.id };
+        const headers: Record<string, string> = {
+          'X-Sync-Id': action.id,
+          'X-Sync-Sequence': String(action.sequence || 0),
+        };
 
         if (
           requestData &&
@@ -149,20 +231,19 @@ export class OfflineSyncEngine {
           result.deadLetterCount++;
         } else {
           action.status = SyncStatus.FAILED;
-          const delayMs = Math.min(300_000, 1000 * 2 ** action.retryCount);
-          action.nextAttemptAt = Date.now() + delayMs;
+          action.nextAttemptAt = Date.now() + backoffWithJitterMs(action.retryCount);
         }
         result.failedCount++;
         result.errors.push(action.lastError || 'Unknown error');
       }
+
+      // Immediately persist outcome of each item
+      const latestQueue = await OfflineSyncEngine.getQueue();
+      await OfflineSyncEngine.saveQueue(
+        latestQueue.map((item) => (item.id === action.id ? { ...action } : item)),
+      );
     }
 
-    queue = await OfflineSyncEngine.getQueue();
-    const updated = queue.map((a) => {
-      const synced = batch.find((b) => b.id === a.id);
-      return synced || a;
-    });
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
     await OfflineSyncEngine.clearCompleted();
 
     result.success = result.failedCount === 0;

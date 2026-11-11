@@ -1,4 +1,4 @@
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 RUN apk add --no-cache libc6-compat openssl && corepack enable && corepack prepare pnpm@9.0.0 --activate
 
 WORKDIR /app
@@ -27,7 +27,7 @@ RUN pnpm deploy --filter core-api --prod /prod/app
 RUN cp -r /app/packages/prisma-schemas/prisma /prod/app/prisma && \
     cd /prod/app && pnpm exec prisma generate
 
-FROM node:20-alpine AS runner
+FROM node:22-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 RUN apk add --no-cache openssl

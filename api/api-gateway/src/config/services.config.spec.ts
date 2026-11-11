@@ -56,7 +56,7 @@ describe('API Gateway Route Rules & Public Paths', () => {
     const inboundRule = matchRoute('/api/v1/inbound/webhooks/deliver');
     expect(inboundRule?.service).toBe('webhook-service');
     expect(inboundRule?.mapPath?.('/api/v1/inbound/webhooks/deliver')).toBe('/webhooks/deliver');
-    expect(PUBLIC_PATHS).toContain('/api/v1/inbound/webhooks');
+    expect(PUBLIC_PATHS).not.toContain('/api/v1/inbound/webhooks');
   });
 
   it('excludes gateway-owned health/docs paths from proxy forwarding', () => {

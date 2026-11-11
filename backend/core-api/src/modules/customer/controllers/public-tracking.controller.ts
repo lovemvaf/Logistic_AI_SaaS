@@ -31,7 +31,6 @@ export class PublicTrackingController {
       trackingCode: order.trackingCode,
       status: order.status,
       recipientName: order.recipientName.substring(0, 1) + "***",
-      shippingFee: order.shippingFee,
       events: order.events,
     };
   }
@@ -65,8 +64,15 @@ export class PublicTrackingController {
       ok: true,
       podImageUrl: delivery.podImageUrl,
       podSignatureUrl: delivery.podSignatureUrl,
-      checkinLat: delivery.checkinLat,
-      checkinLng: delivery.checkinLng,
+      precision: "COARSE_PUBLIC",
+      checkinLat:
+        typeof delivery.checkinLat === "number"
+          ? Math.round(delivery.checkinLat * 100) / 100
+          : null,
+      checkinLng:
+        typeof delivery.checkinLng === "number"
+          ? Math.round(delivery.checkinLng * 100) / 100
+          : null,
       status: delivery.status,
     };
   }
@@ -100,11 +106,18 @@ async function buildPublicLive(prisma: PrismaService, trackingCode: string) {
   });
 
   if (!order) throw new NotFoundException("Order not found");
+  const rawLat = delivery?.checkinLat ?? order.lat ?? null;
+  const rawLng = delivery?.checkinLng ?? order.lng ?? null;
+  // Unauthenticated public live endpoint coarse-rounds GPS to ~1.1km (2 decimals);
+  // full precision requires an authenticated client session or scoped PublicTrackingGrant.
+  const coarseLat = typeof rawLat === "number" ? Math.round(rawLat * 100) / 100 : null;
+  const coarseLng = typeof rawLng === "number" ? Math.round(rawLng * 100) / 100 : null;
   return {
     trackingCode: order.trackingCode,
     status: order.status,
-    lat: delivery?.checkinLat ?? order.lat ?? null,
-    lng: delivery?.checkinLng ?? order.lng ?? null,
+    precision: "COARSE_PUBLIC",
+    lat: coarseLat,
+    lng: coarseLng,
     eta: order.estimatedDeliveryDate ?? null,
     actualDeliveryTime: order.actualDeliveryTime ?? null,
     events: order.events || [],
@@ -166,7 +179,6 @@ export class TrackingController {
       trackingCode: order.trackingCode,
       status: order.status,
       recipientName: order.recipientName.substring(0, 1) + "***",
-      shippingFee: order.shippingFee,
       events: order.events,
     };
   }
