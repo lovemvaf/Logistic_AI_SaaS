@@ -24,18 +24,6 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
   const [lastSyncResult, setLastSyncResult] = useState<SyncResult | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
 
-  useEffect(() => {
-    const unsubscribe = NetInfo.addEventListener(state => {
-      const online = state.isConnected ?? false;
-      setIsOnline(online);
-      if (online) {
-        triggerSync();
-      }
-    });
-
-    return () => unsubscribe();
-  }, []);
-
   const refreshPendingCount = useCallback(async () => {
     const queue = await OfflineSyncEngine.getQueue();
     setPendingCount(queue.filter(a => a.status !== 'COMPLETED').length);
@@ -52,6 +40,18 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
       setIsSyncing(false);
     }
   }, [isSyncing, refreshPendingCount]);
+
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener(state => {
+      const online = state.isConnected ?? false;
+      setIsOnline(online);
+      if (online) {
+        triggerSync();
+      }
+    });
+
+    return () => unsubscribe();
+  }, [triggerSync]);
 
   useEffect(() => {
     refreshPendingCount();

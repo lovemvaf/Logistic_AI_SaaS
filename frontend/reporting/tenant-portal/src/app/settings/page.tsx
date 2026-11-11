@@ -5,7 +5,7 @@ import { EditorialPageHeader, EditorialSection } from 'ui-kit';
 import { StatusLabel } from 'ui-kit';
 import { TableState, Modal, Button, Input, Select, Checkbox } from 'ui-components';
 import { data } from '@/lib/data';
-import type { TenantSettings } from '@/lib/mock';
+import type { AllocationStrategy, TenantSettings } from '@/lib/mock';
 import { formatDateTimeVN } from '@/lib/labels';
 
 const TIMEZONES = [
@@ -224,7 +224,7 @@ export default function SettingsPage() {
             <Select
               id="settings-strategy"
               value={form.autoAllocateStrategy ?? 'FIFO'}
-              onChange={(e) => handleChange({ autoAllocateStrategy: e.target.value })}
+              onChange={(e) => handleChange({ autoAllocateStrategy: e.target.value as AllocationStrategy })}
               options={[
                 { value: 'FIFO', label: 'FIFO — Vào trước ra trước' },
                 { value: 'LIFO', label: 'LIFO — Vào sau ra trước' },

@@ -220,7 +220,9 @@ export default function InventoryLedgerPage() {
       </div>
 
       <Card className="">
-        {view !== 'ledger' && error && <ErrorBanner message={error} onDismiss={() => setError('')} />}
+        {view !== 'ledger' && error && (
+          <ErrorBanner message={error} retryLabel="Đóng" onRetry={() => setError('')} />
+        )}
         {view === 'ledger' ? (
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">

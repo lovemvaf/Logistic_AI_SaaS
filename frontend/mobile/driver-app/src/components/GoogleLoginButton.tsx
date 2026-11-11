@@ -1,111 +1,99 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { TouchableOpacity, Text, StyleSheet, ActivityIndicator, View } from 'react-native';
 import * as AuthSession from 'expo-auth-session';
-import * as Crypto from 'expo-crypto';
 import * as WebBrowser from 'expo-web-browser';
 import { colors } from '../theme/colors';
 import { auth } from '../lib/auth';
 import api from '../lib/api';
 
-WebBrowser.maybeCompleteAsync();
+WebBrowser.maybeCompleteAuthSession();
 
 interface GoogleLoginButtonProps {
   onPress?: () => void;
   tenantSlug?: string;
 }
 
-const discovery = {
+const discovery: AuthSession.DiscoveryDocument = {
   authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
   tokenEndpoint: 'https://oauth2.googleapis.com/token',
   revocationEndpoint: 'https://oauth2.googleapis.com/revoke',
 };
 
-export const GoogleLoginButton: React.FC<GoogleLoginButtonProps> = ({ onPress }) => {
+export const GoogleLoginButton: React.FC<GoogleLoginButtonProps> = ({ onPress, tenantSlug }) => {
   const [loading, setLoading] = useState(false);
 
-  const handleGoogleLogin = async () => {
-    setLoading(true);
-    try {
-      const clientId = process.env.GOOGLE_CLIENT_ID || '';
-      const redirectUri = AuthSession.makeRedirectUri({
-        useProxy: true,
-      });
+  const clientId = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_ID || '';
+  const redirectUri = AuthSession.makeRedirectUri({
+    scheme: 'smartlogi-driver',
+    path: 'oauthredirect',
+  });
 
-      // Generate PKCE code verifier and challenge
-      const codeVerifier = Crypto.getRandomBytesAsync(32).then(bytes =>
-        Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
-      );
-      const verifier = await codeVerifier;
+  const [request, response, promptAsync] = AuthSession.useAuthRequest(
+    {
+      clientId,
+      scopes: ['openid', 'email', 'profile'],
+      redirectUri,
+      usePKCE: true,
+    },
+    discovery,
+  );
 
-      const codeChallenge = await Crypto.digestStringAsync(
-        Crypto.CryptoDigestAlgorithm.SHA256,
-        verifier,
-        Crypto.CryptoDigestOptions.DIGEST_HEX
-      );
+  useEffect(() => {
+    if (response?.type !== 'success') return;
+    const code = response.params?.code;
+    if (!code) return;
 
-      const codeChallengeMethod = AuthSession.CodeChallengeMethod.S256;
+    let active = true;
+    (async () => {
+      setLoading(true);
+      try {
+        const tokenData = await AuthSession.exchangeCodeAsync(
+          {
+            code,
+            clientId,
+            redirectUri,
+            extraParams: request?.codeVerifier ? { code_verifier: request.codeVerifier } : undefined,
+          },
+          discovery,
+        );
 
-      const authUrl =
-        `${discovery.authorizationEndpoint}` +
-        `?client_id=${clientId}` +
-        `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-        `&response_type=code` +
-        `&code_challenge=${codeChallenge}` +
-        `&code_challenge_method=${codeChallengeMethod}` +
-        `&scope=openid email profile` +
-        `&access_type=offline`;
-
-      const result = await AuthSession.startAsync({
-        authUrl: authUrl,
-        returnUrl: redirectUri,
-      });
-
-      if (result.type === 'success' && result.params.code) {
-        // Exchange code for tokens
-        const tokenResponse = await fetch(discovery.tokenEndpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({
-            client_id: clientId,
-            client_secret: '',
-            code: result.params.code,
-            code_verifier: verifier,
-            grant_type: 'authorization_code',
-            redirect_uri: redirectUri,
-          }).toString(),
-        });
-
-        const tokenData = await tokenResponse.json();
-        const idToken = tokenData.id_token;
-
+        const idToken = tokenData.idToken;
         if (!idToken) {
           throw new Error('Failed to obtain ID token from Google');
         }
 
-        // Send ID token to backend for verification
-        const res = await api.post('/mobile/auth/google', {
-          credential: idToken,
-        }, {
-          headers: { 'x-tenant-slug': '' },
-        });
+        const res = await api.post(
+          '/mobile/auth/google',
+          { credential: idToken },
+          { headers: { 'x-tenant-slug': tenantSlug ?? '' } },
+        );
 
-        if (res.data?.accessToken) {
+        if (active && res.data?.accessToken) {
           await auth.setToken(res.data.accessToken);
           onPress?.();
         }
+      } catch (error: unknown) {
+        console.error('Google login error:', error);
+      } finally {
+        if (active) setLoading(false);
       }
-    } catch (error: any) {
-      console.error('Google login error:', error);
-    } finally {
-      setLoading(false);
-    }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [response, clientId, redirectUri, request, tenantSlug, onPress]);
+
+  const handleGoogleLogin = () => {
+    if (!request) return;
+    void promptAsync();
   };
 
   return (
     <TouchableOpacity
       onPress={handleGoogleLogin}
-      disabled={loading}
-      style={[styles.button, loading && styles.buttonDisabled]}
+      disabled={loading || !request}
+      style={[styles.button, (loading || !request) && styles.buttonDisabled]}
       activeOpacity={0.8}
     >
       {loading ? (

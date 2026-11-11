@@ -5,7 +5,7 @@ import { colors } from '../theme/colors';
 interface ActionButtonProps {
   title: string;
   onPress: () => void;
-  variant?: 'primary' | 'secondary' | 'outline';
+  variant?: 'primary' | 'secondary' | 'outline' | 'danger';
   disabled?: boolean;
   style?: ViewStyle;
   textStyle?: TextStyle;
@@ -31,6 +31,10 @@ export const ActionButton: React.FC<ActionButtonProps> = ({
     outline: {
       container: { backgroundColor: 'transparent', borderWidth: 1, borderColor: colors.slate[300] },
       text: { color: colors.ink },
+    },
+    danger: {
+      container: { backgroundColor: colors.rose[500] },
+      text: { color: colors.white },
     },
   };
 

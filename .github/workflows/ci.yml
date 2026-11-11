@@ -155,8 +155,51 @@ jobs:
 
       - name: Run cargo check and cargo test
         run: |
-          cargo check --workspace
-          cargo test --workspace
+          python3 - <<'PY'
+          import json, subprocess, sys
+          def emit_lines(text):
+              lines = [l.strip() for l in text.splitlines() if l.strip()]
+              for l in lines[-8:]:
+                  safe = l.replace("%", "%25").replace("\r", "").replace("\n", " ")
+                  print(f"::error::{safe}")
+          p = subprocess.run(
+              ["cargo", "check", "--workspace", "--all-targets", "--message-format=json"],
+              capture_output=True,
+              text=True,
+          )
+          emitted = 0
+          for line in p.stdout.splitlines():
+              try:
+                  msg = json.loads(line)
+              except Exception:
+                  continue
+              if msg.get("reason") == "compiler-message":
+                  m = msg.get("message", {})
+                  level = m.get("level")
+                  rendered = m.get("rendered", "").strip()
+                  if level in ("error", "failure-note") and rendered:
+                      print(rendered, file=sys.stderr)
+                  if level == "error":
+                      spans = [s for s in m.get("spans", []) if s.get("is_primary")]
+                      text = (m.get("message") or "rust error").replace("%", "%25").replace("\r", "").replace("\n", " ")
+                      if spans:
+                          s = spans[0]
+                          print(f"::error file=backend/rust-api/{s['file_name']},line={s['line_start']},col={s['column_start']}::{text}")
+                      else:
+                          print(f"::error::{text}")
+                      emitted += 1
+          if p.returncode != 0:
+              sys.stderr.write(p.stderr)
+              if emitted == 0:
+                  emit_lines(p.stderr)
+              sys.exit(p.returncode)
+          t = subprocess.run(["cargo", "test", "--workspace"], capture_output=True, text=True)
+          sys.stdout.write(t.stdout)
+          sys.stderr.write(t.stderr)
+          if t.returncode != 0:
+              emit_lines(t.stdout + "\n" + t.stderr)
+              sys.exit(t.returncode)
+          PY
 
   postgres-rls:
     name: PostgreSQL Migrations & RLS Isolation Suite

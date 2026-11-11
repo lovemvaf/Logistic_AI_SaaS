@@ -9,6 +9,7 @@ import type {
   DriverActivityKind,
   Equipment,
   Expense,
+  Invoice,
   MaintenanceType,
   MovementType,
   NotificationEvent,

@@ -1,7 +1,7 @@
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import LoginScreen from '../screens/LoginScreen';
-import { TabNavigator } from './TabNavigator';
+import TabNavigator from './TabNavigator';
 import TripDetailScreen from '../screens/TripDetailScreen';
 import PODScreen from '../screens/PODScreen';
 import ExpenseScreen from '../screens/ExpenseScreen';

@@ -7,6 +7,7 @@ import {
   MetricBand,
   StatusLabel,
   EmptyNote,
+  type EditorialMetric,
 } from 'ui-kit';
 import { TableState } from 'ui-components';
 import { formatNumber, formatDateVN } from '@/lib/labels';
@@ -119,7 +120,7 @@ export default function StockAlertsPage() {
     status === 'out' ? r.available === 0 : status === 'low' ? r.available > 0 && r.available <= analysis.lowStockThreshold : true,
   );
 
-  const metrics = [
+  const metrics: EditorialMetric[] = [
     {
       label: 'Sắp hết hàng',
       value: formatNumber(analysis?.counts.lowStock ?? 0),

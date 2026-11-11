@@ -45,10 +45,10 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   inputError: {
-    borderColor: colors.error,
+    borderColor: colors.rose[500],
   },
   errorText: {
-    color: colors.error,
+    color: colors.rose[500],
     marginTop: 4,
   },
 });
