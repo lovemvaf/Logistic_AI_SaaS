@@ -1,6 +1,7 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { CacheModule } from '@nestjs/cache-manager';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { SmartThrottlerGuard } from './core/http/smart-throttler.guard';
 import { APP_INTERCEPTOR, APP_GUARD, Reflector } from '@nestjs/core';
 import { PermissionsGuard } from 'shared-types';
 
@@ -40,13 +41,19 @@ import { TradeModule } from './modules/trade/trade.module';
     CacheModule.register({ ttl: 300000, isGlobal: true }),
     ThrottlerModule.forRoot([
       {
+        name: 'default',
         ttl: 60000,
-        limit: 10,
+        limit: parseInt(process.env.THROTTLE_DEFAULT_LIMIT || '300', 10),
       },
       {
         name: 'auth',
         ttl: 60000,
-        limit: 5,
+        limit: parseInt(process.env.THROTTLE_AUTH_LIMIT || '15', 10),
+        skipIf: (context) => {
+          const req = context.switchToHttp().getRequest();
+          const url: string = req?.originalUrl || req?.url || '';
+          return !url.includes('/auth/');
+        },
       },
     ]),
     PrismaModule,
@@ -78,7 +85,7 @@ import { TradeModule } from './modules/trade/trade.module';
     },
     {
       provide: APP_GUARD,
-      useClass: ThrottlerGuard,
+      useClass: SmartThrottlerGuard,
     },
   ],
 })

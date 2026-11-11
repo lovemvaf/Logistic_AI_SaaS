@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev -p 4004",
     "build": "next build",
-    "start": "next start -p 4004"
+    "start": "next start -p 4004",
+    "vercel-build": "pnpm --filter ui-components build && pnpm --filter ui-kit build && next build"
   },
   "dependencies": {
     "@react-oauth/google": "^0.13.5",

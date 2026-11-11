@@ -86,7 +86,7 @@ export default function PackLogsPage() {
     for (const session of sessions) {
       const station = stations.find((row) => row.id === session.stationId);
       const staff = staffList.find((row) => row.id === session.staffId);
-      for (const scanLog of session.scanLogs) {
+      for (const scanLog of session.scanLogs || []) {
         const order = orderMap[scanLog.packCode];
         list.push({
           ...scanLog,
@@ -97,7 +97,7 @@ export default function PackLogsPage() {
         });
       }
     }
-    return list.sort((a, b) => b.scannedAt.localeCompare(a.scannedAt));
+    return list.sort((a, b) => String(b.scannedAt || '').localeCompare(String(a.scannedAt || '')));
   }, [sessions, stations, staffList, orderMap]);
 
   // --- Filters logic ---
@@ -149,12 +149,14 @@ export default function PackLogsPage() {
       // Làm giàu hàng chờ bằng thông tin đơn.
       const packCodes = new Set<string>();
       for (const session of sessionList) {
-        for (const log of session.scanLogs) packCodes.add(log.packCode);
+        for (const log of session.scanLogs || []) packCodes.add(log.packCode);
       }
       const orderMapData: Record<string, PackOrder> = {};
       for (const code of packCodes) {
-        const order = await data.orders.byPackCode(code);
-        if (order) orderMapData[code] = order;
+        try {
+          const order = await data.orders.byPackCode(code);
+          if (order) orderMapData[code] = order;
+        } catch {}
       }
       setOrderMap(orderMapData);
 
@@ -411,8 +413,8 @@ export default function PackLogsPage() {
           {corrections.length === 0 ? (
             <EmptyNote>Không có đính chính nào.</EmptyNote>
           ) : (
-            corrections
-              .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+            [...corrections]
+              .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
               .map((correction) => {
                 const order = orderMap[correction.packCode];
                 return (

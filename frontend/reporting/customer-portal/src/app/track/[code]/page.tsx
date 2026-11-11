@@ -1,12 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useState, use } from 'react';
+import { Suspense, useCallback, useEffect, useState, use } from 'react';
 import Link from 'next/link';
-import { data } from '@/lib/data';
+import { useSearchParams } from 'next/navigation';
+import api from '@/lib/api';
+import { data, isMockDataSource } from '@/lib/data';
 import {
   EditorialPageHeader,
   EditorialSection,
-  EmptyNote,
   MetricBand,
   StatusLabel,
   type StatusTone,
@@ -20,13 +21,17 @@ import {
 
 /** Mã vận đơn công khai: che tên người gửi, che 3 số cuối SĐT, không hiển thị COD. */
 function maskPhone(phone: string) {
-  const digits = phone.replace(/\s+/g, '');
+  const digits = String(phone || '').replace(/\s+/g, '');
   if (digits.length < 4) return '—';
   return `${digits.slice(0, -3)}***`;
 }
 
-export default function TrackPage({ params }: { params: Promise<{ code: string }> }) {
-  const { code } = use(params);
+function TrackContent({ code }: { code: string }) {
+  const searchParams = useSearchParams();
+  const grantToken = searchParams.get('token')?.trim() || '';
+
+  const [grantData, setGrantData] = useState<any>(null);
+  const [grantGone, setGrantGone] = useState(false);
 
   const [order, setOrder] = useState<any>(null);
   const [live, setLive] = useState<any>(null);
@@ -39,6 +44,8 @@ export default function TrackPage({ params }: { params: Promise<{ code: string }
   const fetchTrack = useCallback(async () => {
     setLoading(true);
     setError('');
+    setGrantData(null);
+    setGrantGone(false);
     setOrder(null);
     setLive(null);
     setSla(null);
@@ -46,21 +53,46 @@ export default function TrackPage({ params }: { params: Promise<{ code: string }
     setNotFound(false);
 
     try {
+      if (grantToken && !isMockDataSource) {
+        const res = await api.get(`/public/t/${encodeURIComponent(grantToken)}`);
+        const payload = res?.data ?? res;
+        if (!payload) {
+          setNotFound(true);
+        } else {
+          setGrantData(payload);
+        }
+        return;
+      }
+
       const orderRow = await data.orders.byTrackingCode(code);
       if (!orderRow) {
         setNotFound(true);
       } else {
         setOrder(orderRow);
-        setLive(await data.orders.live(code));
-        setSla(await data.orders.sla(code));
-        setPredict(await data.aiFeature.predictETA(code));
+        try {
+          setLive(await data.orders.live(code));
+        } catch {}
+        try {
+          setSla(await data.orders.sla(code));
+        } catch {}
+        try {
+          setPredict(await data.aiFeature.predictETA(code));
+        } catch {}
       }
     } catch (err: any) {
-      setError(err.message);
+      const httpStatus = err?.response?.status;
+      if (httpStatus === 410) {
+        setGrantGone(true);
+        setError(err?.response?.data?.message || 'Liên kết chia sẻ đã bị thu hồi hoặc hết hạn (410 Gone).');
+      } else if (httpStatus === 404) {
+        setNotFound(true);
+      } else {
+        setError(err?.response?.data?.message || err?.message || 'Không tra cứu được vận đơn.');
+      }
     } finally {
       setLoading(false);
     }
-  }, [code]);
+  }, [code, grantToken]);
 
   useEffect(() => {
     if (code) void fetchTrack();
@@ -68,7 +100,6 @@ export default function TrackPage({ params }: { params: Promise<{ code: string }
 
   const statusTone = order ? orderStatusTone(order.status) : undefined;
 
-  /** Nhãn thật của các trạng thái trung gian, màu sắc và đoạn status đồng bộ. */
   const RISK_TONES: Record<string, StatusTone> = {
     none: 'neutral',
     low: 'info',
@@ -90,7 +121,19 @@ export default function TrackPage({ params }: { params: Promise<{ code: string }
     planned: 'info',
   };
 
-  const orderForecastLabel = (sla: string) => SLA_LABELS[sla] ?? sla;
+  const orderForecastLabel = (slaStatus: string) => SLA_LABELS[slaStatus] ?? slaStatus;
+
+  const timelineItems: any[] = order
+    ? Array.isArray(order.timeline)
+      ? order.timeline
+      : Array.isArray(order.events)
+        ? order.events.map((ev: any) => ({
+            at: ev.timestamp || ev.createdAt,
+            label: ev.description || ev.status || 'Cập nhật trạng thái',
+            actor: ev.location || 'Hệ thống',
+          }))
+        : []
+    : [];
 
   return (
     <div className="min-h-[100dvh] bg-canvas p-6 font-sans text-ink">
@@ -100,33 +143,45 @@ export default function TrackPage({ params }: { params: Promise<{ code: string }
             <>
               <span>Khách hàng</span>
               <span className="text-line-strong" aria-hidden="true">/</span>
-              <span>Tra cứu công khai</span>
+              <span>{grantToken ? 'Liên kết chia sẻ có kiểm soát (Grant)' : 'Tra cứu công khai'}</span>
             </>
           }
           title={
-            <span className="font-mono tracking-tight">{code || '—'}</span>
+            <span className="font-mono tracking-tight">{grantData?.trackingCode || code || '—'}</span>
           }
-          description="Tra cứu công khai, không cần đăng nhập. Giá trị COD, tên người gửi và thông tin nội bộ không hiển thị."
+          description="Tra cứu công khai, không cần đăng nhập. Giá trị COD, tên người gửi và thông tin nội bộ được ẩn hoặc làm tròn theo phân quyền Grant."
           meta={
-            <div className="flex flex-wrap items-center gap-4">
-              {order ? (
+            <div className="flex flex-wrap items-center gap-3">
+              {grantData ? (
+                <>
+                  <StatusLabel tone="info">Precision: {grantData.precision}</StatusLabel>
+                  <StatusLabel tone="success">{grantData.status}</StatusLabel>
+                </>
+              ) : order ? (
                 <StatusLabel tone={statusTone}>{orderStatusLabel(order.status)}</StatusLabel>
               ) : null}
-              <p>Truy cập: công khai</p>
+              <p>Truy cập: {grantToken ? 'Scoped Grant' : 'Công khai'}</p>
             </div>
           }
           actions={
             <Link
               href="/"
-              className="h-9 rounded-md border border-line px-3 text-[12px] font-medium text-ink-soft transition-colors hover:border-accent hover:text-accent"
+              className="flex h-9 items-center rounded-md border border-line px-3 text-[12px] font-medium text-ink-soft transition-colors hover:border-accent hover:text-accent"
             >
               Tra cứu khác
             </Link>
           }
         />
 
-        {error ? (
-          <div className="flex flex-wrap items-center justify-between gap-2 border-l-2 border-danger bg-surface px-3 py-2 text-[12px] text-ink-soft">
+        {grantGone ? (
+          <div className="mt-4 rounded-md border border-danger/40 bg-danger/5 p-4 text-[13px] text-ink">
+            <p className="font-semibold text-danger">Liên kết chia sẻ không còn hiệu lực (410 Gone)</p>
+            <p className="mt-1 text-ink-soft">{error}</p>
+          </div>
+        ) : null}
+
+        {error && !grantGone ? (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-l-2 border-danger bg-surface px-3 py-2 text-[12px] text-ink-soft">
             <span>{error}</span>
             <button
               type="button"
@@ -138,239 +193,221 @@ export default function TrackPage({ params }: { params: Promise<{ code: string }
           </div>
         ) : null}
 
-        <DataState
-          loading={loading}
-          empty={notFound}
-          error={error || undefined}
-          emptyTitle="Không tìm thấy mã vận đơn"
-          emptyDescription={`Không có kiện hàng nào mang mã ${code}.`}
-          retryLabel="Thử lại"
-          onRetry={fetchTrack}
-        >
-          <div className="space-y-4">
+        {grantData ? (
+          <div className="mt-4 space-y-4">
             <MetricBand
               metrics={[
+                { label: 'Loại hồ sơ', value: grantData.kind, meta: grantData.shipmentNo || grantData.trackingCode },
+                { label: 'Trạng thái', value: grantData.status, tone: 'success' },
                 {
-                  label: 'Trạng thái',
-                  value: order ? (
-                    <StatusLabel tone={statusTone}>
-                      {orderStatusLabel(order.status)}
-                    </StatusLabel>
-                  ) : (
-                    '—'
-                  ),
-                  meta: 'Cập nhật lần cuối',
+                  label: 'Phạm vi tọa độ',
+                  value: grantData.precision,
+                  meta:
+                    grantData.lat != null && grantData.lng != null
+                      ? `${grantData.lat}, ${grantData.lng}`
+                      : 'Không hiển thị tọa độ chi tiết',
                 },
                 {
-                  label: 'Dự kiến giao',
-                  value: order ? formatDateTimeVN(order.estimatedAt) : '—',
-                  meta: order?.status === 'DELIVERED' ? 'Đã giao trước giờ hẹn' : 'Hẹn ban đầu',
-                  tone: sla?.overtime ? 'danger' : undefined,
-                },
-                {
-                  label: 'Người nhận',
-                  value: order ? order.recipientName : '—',
-                  meta: `SĐT: ${order ? maskPhone(order.recipientPhone) : '—'}`,
-                },
-                {
-                  label: 'Người gửi',
-                  value: order ? (order.senderName ? 'Kho trung chuyển' : '—') : '—',
-                  meta: 'Ẩn trong chế độ công khai',
+                  label: 'Hết hạn Grant',
+                  value: formatDateTimeVN(grantData.expiresAt),
+                  meta: grantData.containerNo ? `Container ${grantData.containerNo}` : 'Liên kết tạm thời',
                 },
               ]}
             />
 
-            {live ? (
-              <EditorialSection
-                eyebrow="Vận hành"
-                title="Theo dõi xe"
-                action={
-                  <StatusLabel tone={order?.status === 'DELIVERED' ? 'success' : 'info'}>
-                    {order?.status === 'DELIVERED' ? 'Đã hoàn tất' : 'Đang vận chuyển'}
-                  </StatusLabel>
-                }
-              >
-                <dl className="grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <dt className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-                      Điểm đi
-                    </dt>
-                    <dd className="mt-0.5 text-[13px] text-ink">
-                      {live.from.name}
-                      <div className="text-[12px] text-ink-soft">{live.from.address}</div>
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-                      Điểm đến
-                    </dt>
-                    <dd className="mt-0.5 text-[13px] text-ink">
-                      {live.to.name}
-                      <div className="text-[12px] text-ink-soft">{live.to.address}</div>
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-                      Vị trí xe gần nhất
-                    </dt>
-                    <dd className="mt-0.5 text-[13px] text-ink">
-                      {live.current.name}
-                      <div className="text-[12px] text-ink-soft">{live.current.address}</div>
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-                      Tài xế
-                    </dt>
-                    <dd className="mt-0.5 text-[13px] text-ink">
-                      {live.driverName || 'Chưa phân bổ'}
-                    </dd>
-                  </div>
-                  {live.nextStop ? (
-                    <>
+            {Array.isArray(grantData.legs) && grantData.legs.length > 0 ? (
+              <EditorialSection eyebrow="Freight Legs" title="Các chặng vận chuyển container / 3PL">
+                <div className="space-y-2">
+                  {grantData.legs.map((leg: any) => (
+                    <div key={leg.sequence} className="flex flex-wrap items-center justify-between gap-3 border-b border-line/80 py-2 text-[12px]">
                       <div>
-                        <dt className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-                          Điểm dừng kế tiếp
-                        </dt>
-                        <dd className="mt-0.5 text-[13px] text-ink">
-                          {live.nextStop.name}
-                          <div className="text-[12px] text-ink-soft">{live.nextStop.address}</div>
-                        </dd>
+                        <span className="font-mono font-medium text-ink">Chặng #{leg.sequence} ({leg.legType})</span>
+                        <span className="ml-2 text-ink-soft">{leg.originName} -&gt; {leg.destName}</span>
                       </div>
-                      <div>
-                        <dt className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-                          ETA
-                        </dt>
-                        <dd className="mt-0.5 text-[13px] tabular-nums text-ink">
-                          {formatDateTimeVN(live.nextStop.eta)}
-                        </dd>
+                      <div className="flex items-center gap-3">
+                        {leg.originLat != null && leg.originLng != null ? (
+                          <span className="font-mono text-[11px] text-ink-faint">
+                            {leg.originLat}, {leg.originLng}
+                          </span>
+                        ) : null}
+                        <StatusLabel tone={leg.status === 'COMPLETED' ? 'success' : 'info'}>{leg.status}</StatusLabel>
                       </div>
-                    </>
-                  ) : null}
-                </dl>
+                    </div>
+                  ))}
+                </div>
               </EditorialSection>
             ) : null}
 
-            {sla ? (
-              <EditorialSection eyebrow="Cam kết" title="SLA giao hàng">
-                <div className="grid gap-4 sm:grid-cols-3">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-                      Hẹn ban đầu
-                    </p>
-                    <p className="mt-1 text-[13px] font-medium text-ink">
-                      {formatDateTimeVN(sla.promisedAt)}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-                      Giao thực tế
-                    </p>
-                    <p className="mt-1 text-[13px] font-medium text-ink">
-                      {sla.actualAt ? formatDateTimeVN(sla.actualAt) : '—'}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-                      Kết quả
-                    </p>
-                    <p className="mt-1">
-                      <StatusLabel tone={sla.overtime ? 'danger' : 'success'}>
-                        {sla.overtime ? 'Quá hạn' : 'Đạt'}
-                      </StatusLabel>
-                    </p>
-                  </div>
+            {Array.isArray(grantData.events) && grantData.events.length > 0 ? (
+              <EditorialSection eyebrow="Sự kiện" title="Nhật ký theo dõi được chia sẻ">
+                <div className="space-y-3">
+                  {grantData.events.map((ev: any, idx: number) => (
+                    <div key={ev.id || idx} className="border-l-2 border-line-strong pl-3">
+                      <p className="text-[12px] font-medium text-ink">{ev.description || ev.status}</p>
+                      <p className="text-[11px] text-ink-faint">
+                        {formatDateTimeVN(ev.timestamp || ev.createdAt)} — {ev.location || 'Hệ thống'}
+                      </p>
+                    </div>
+                  ))}
                 </div>
-                {sla.reason ? (
-                  <p className="mt-3 text-[12px] text-ink-soft">Lý do: {sla.reason}</p>
-                ) : null}
-              </EditorialSection>
-            ) : null}
-
-            {predict && order?.status !== 'DELIVERED' && !['FAILED', 'CANCELLED'].includes(order.status) ? (
-              <EditorialSection eyebrow="Dự báo" title="Dự kiến giao hàng">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-                      Khoảng dự kiến
-                    </p>
-                    <p className="mt-1 text-[13px] text-ink">
-                      {formatDateTimeVN(predict.earliestAt)} — {formatDateTimeVN(predict.latestAt)}
-                    </p>
-                    <p className="mt-1 text-[11px] text-ink-soft">
-                      Trung bình: {formatDateTimeVN(predict.normalAt)}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <StatusLabel tone={RISK_TONES[predict.delayRisk] ?? 'neutral'}>
-                      {predict.delayRisk ?? '—'}
-                    </StatusLabel>
-                    <StatusLabel tone={SLA_LABELTONE[predict.sla] ?? 'neutral'}>
-                      {SLA_LABELS[predict.sla] ?? predict.sla}
-                    </StatusLabel>
-                    <p className="text-[12px] text-ink-soft">{predict.confidence}% tin cậy</p>
-                  </div>
-                </div>
-                <div className="mt-4 grid gap-2 sm:grid-cols-3">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-                      Dự báo lúc
-                    </p>
-                    <p className="mt-1 text-[13px] font-medium text-ink">{formatDateTimeVN(predict.predictedAt)}</p>
-                  </div>
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-                      Kỷ lục dịch vụ
-                    </p>
-                    <p className="mt-1 text-[13px] font-medium text-ink">{orderForecastLabel(predict.sla)}</p>
-                  </div>
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-                      Trạng thái
-                    </p>
-                    <p className="mt-1 text-[13px] font-medium text-ink">{orderStatusLabel(order.status)}</p>
-                  </div>
-                </div>
-                {predict.steps ? (
-                  <dl className="mt-4 grid gap-2 sm:grid-cols-2">
-                    {predict.steps.map((step: any) => (
-                      <div
-                        key={step.at}
-                        className="flex items-center justify-between border-t border-line/80 py-2"
-                      >
-                        <dt className="text-[11px] text-ink-soft">{step.label}</dt>
-                        <dd className="text-[12px] text-ink tabular-nums">{formatDateTimeVN(step.at)}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                ) : null}
-              </EditorialSection>
-            ) : null}
-
-            {order ? (
-              <EditorialSection eyebrow="Lịch sử" title="Nhật ký trạng thái">
-                <DataState
-                  loading={false}
-                  empty={!order.timeline.length}
-                  emptyTitle="Chưa có sự kiện"
-                  emptyDescription="Mã vận đơn này chưa có ghi nhận nào."
-                >
-                  <div className="space-y-3">
-                    {order.timeline.map((event: any, index: number) => (
-                      <div key={`${event.at}-${index}`} className="border-l-2 border-line-strong pl-3">
-                        <p className="text-[12px] font-medium text-ink">{event.label}</p>
-                        <p className="text-[11px] text-ink-faint">
-                          {formatDateTimeVN(event.at)} — {event.actor}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </DataState>
               </EditorialSection>
             ) : null}
           </div>
-        </DataState>
+        ) : !grantGone ? (
+          <DataState
+            loading={loading}
+            empty={notFound}
+            error={error || undefined}
+            emptyTitle="Không tìm thấy mã vận đơn"
+            emptyDescription={`Không có kiện hàng nào mang mã ${code}.`}
+            retryLabel="Thử lại"
+            onRetry={fetchTrack}
+          >
+            <div className="mt-4 space-y-4">
+              <MetricBand
+                metrics={[
+                  {
+                    label: 'Trạng thái',
+                    value: order ? (
+                      <StatusLabel tone={statusTone}>
+                        {orderStatusLabel(order.status)}
+                      </StatusLabel>
+                    ) : (
+                      '—'
+                    ),
+                    meta: 'Cập nhật lần cuối',
+                  },
+                  {
+                    label: 'Dự kiến giao',
+                    value: order ? formatDateTimeVN(order.estimatedAt || live?.eta) : '—',
+                    meta: order?.status === 'DELIVERED' ? 'Đã giao hoàn tất' : 'Hẹn ban đầu',
+                    tone: sla?.overtime ? 'danger' : undefined,
+                  },
+                  {
+                    label: 'Người nhận',
+                    value: order ? order.recipientName : '—',
+                    meta: `SĐT: ${order?.recipientPhone ? maskPhone(order.recipientPhone) : 'Ẩn công khai'}`,
+                  },
+                  {
+                    label: 'Tọa độ công khai',
+                    value: live?.precision || 'COARSE_PUBLIC',
+                    meta:
+                      live?.lat != null && live?.lng != null
+                        ? `${live.lat}, ${live.lng} (làm tròn ~1.1km)`
+                        : 'Ẩn trong chế độ công khai',
+                  },
+                ]}
+              />
+
+              {live && live.from && live.to ? (
+                <EditorialSection
+                  eyebrow="Vận hành"
+                  title="Theo dõi xe"
+                  action={
+                    <StatusLabel tone={order?.status === 'DELIVERED' ? 'success' : 'info'}>
+                      {order?.status === 'DELIVERED' ? 'Đã hoàn tất' : 'Đang vận chuyển'}
+                    </StatusLabel>
+                  }
+                >
+                  <dl className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <dt className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">Điểm đi</dt>
+                      <dd className="mt-0.5 text-[13px] text-ink">
+                        {live.from.name}
+                        <div className="text-[12px] text-ink-soft">{live.from.address}</div>
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">Điểm đến</dt>
+                      <dd className="mt-0.5 text-[13px] text-ink">
+                        {live.to.name}
+                        <div className="text-[12px] text-ink-soft">{live.to.address}</div>
+                      </dd>
+                    </div>
+                  </dl>
+                </EditorialSection>
+              ) : null}
+
+              {sla ? (
+                <EditorialSection eyebrow="Cam kết" title="SLA giao hàng">
+                  <div className="grid gap-4 sm:grid-cols-3">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">Hẹn ban đầu</p>
+                      <p className="mt-1 text-[13px] font-medium text-ink">{formatDateTimeVN(sla.promisedAt)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">Giao thực tế</p>
+                      <p className="mt-1 text-[13px] font-medium text-ink">
+                        {sla.actualAt || sla.deliveredAt ? formatDateTimeVN(sla.actualAt || sla.deliveredAt) : '—'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">Kết quả</p>
+                      <p className="mt-1">
+                        <StatusLabel tone={sla.overtime || sla.onTrack === false ? 'danger' : 'success'}>
+                          {sla.overtime || sla.onTrack === false ? 'Quá hạn' : 'Đạt'}
+                        </StatusLabel>
+                      </p>
+                    </div>
+                  </div>
+                </EditorialSection>
+              ) : null}
+
+              {predict && order?.status !== 'DELIVERED' && !['FAILED', 'CANCELLED'].includes(order.status) ? (
+                <EditorialSection eyebrow="Dự báo" title="Dự kiến giao hàng">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">Khoảng dự kiến</p>
+                      <p className="mt-1 text-[13px] text-ink">
+                        {formatDateTimeVN(predict.earliestAt)} — {formatDateTimeVN(predict.latestAt)}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <StatusLabel tone={RISK_TONES[predict.delayRisk] ?? 'neutral'}>
+                        {predict.delayRisk ?? '—'}
+                      </StatusLabel>
+                      <StatusLabel tone={SLA_LABELTONE[predict.sla] ?? 'neutral'}>
+                        {orderForecastLabel(predict.sla)}
+                      </StatusLabel>
+                    </div>
+                  </div>
+                </EditorialSection>
+              ) : null}
+
+              {order ? (
+                <EditorialSection eyebrow="Lịch sử" title="Nhật ký trạng thái">
+                  <DataState
+                    loading={false}
+                    empty={!timelineItems.length}
+                    emptyTitle="Chưa có sự kiện"
+                    emptyDescription="Mã vận đơn này chưa có ghi nhận nào."
+                  >
+                    <div className="space-y-3">
+                      {timelineItems.map((event: any, index: number) => (
+                        <div key={`${event.at}-${index}`} className="border-l-2 border-line-strong pl-3">
+                          <p className="text-[12px] font-medium text-ink">{event.label}</p>
+                          <p className="text-[11px] text-ink-faint">
+                            {formatDateTimeVN(event.at)} — {event.actor}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </DataState>
+                </EditorialSection>
+              ) : null}
+            </div>
+          </DataState>
+        ) : null}
       </div>
     </div>
+  );
+}
+
+export default function TrackPage({ params }: { params: Promise<{ code: string }> }) {
+  const { code } = use(params);
+  return (
+    <Suspense fallback={<div className="min-h-[100dvh] bg-canvas p-6 text-[13px] text-ink-soft">Đang tải thông tin tra cứu...</div>}>
+      <TrackContent code={code} />
+    </Suspense>
   );
 }

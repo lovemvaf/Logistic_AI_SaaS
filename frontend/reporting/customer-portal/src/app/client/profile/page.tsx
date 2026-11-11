@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { data } from '@/lib/data';
+import api from '@/lib/api';
+import { data, isMockDataSource } from '@/lib/data';
 import {
   EditorialPageHeader,
   EditorialSection,
@@ -44,15 +45,15 @@ export default function ClientProfile() {
     try {
       const rows = await data.profiles.list();
       setProfiles(rows);
-      const row = rows.find((r: any) => r.role === 'CLIENT');
+      const row = rows.find((r: any) => r.role === 'CLIENT') || rows[0];
       if (row) {
-        setCompanyName(row.company);
-        setContactName(row.contactName);
-        setPhone(row.phone);
-        setAddress(row.address);
-        setProvince(row.province);
-        setDistrict(row.district);
-        setTaxCode(row.taxCode);
+        setCompanyName(row.company || '');
+        setContactName(row.contactName || '');
+        setPhone(row.phone || '');
+        setAddress(row.address || '');
+        setProvince(row.province || '');
+        setDistrict(row.district || '');
+        setTaxCode(row.taxCode || '');
       }
     } catch (err: any) {
       setError(err.message);
@@ -118,16 +119,28 @@ export default function ClientProfile() {
 
     setChangingPassword(true);
     try {
+      if (!isMockDataSource) {
+        if (!oldPassword) {
+          setPasswordMsg('Vui lòng nhập mật khẩu hiện tại.');
+          return;
+        }
+        await api.post('/client/auth/change-password', { oldPassword, newPassword });
+      }
       setPasswordMsg('Đã cập nhật mật khẩu.');
       setOldPassword('');
       setNewPassword('');
       setConfirmNewPassword('');
-    } catch {
-      setPasswordMsg('Thay đổi mật khẩu không khả dụng trong chế độ thử nghiệm.');
+    } catch (err: any) {
+      setPasswordMsg(
+        err?.response?.data?.message ||
+          (isMockDataSource
+            ? 'Thay đổi mật khẩu không khả dụng trong chế độ thử nghiệm.'
+            : 'Không đổi được mật khẩu.'),
+      );
     } finally {
       setChangingPassword(false);
     }
-  }, [newPassword, confirmNewPassword]);
+  }, [oldPassword, newPassword, confirmNewPassword]);
 
   return (
     <div className="space-y-4">

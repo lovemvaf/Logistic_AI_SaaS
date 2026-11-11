@@ -14,6 +14,7 @@ const customerSections: NavSection[] = [
     items: [
       { label: 'Dashboard', href: '/client/dashboard' },
       { label: 'Orders', href: '/client/orders' },
+      { label: 'Freight B2B', href: '/client/freight' },
       { label: 'Orders Upload', href: '/client/orders/upload' },
       { label: 'Inventory', href: '/client/inventory' },
       { label: 'Webhooks', href: '/client/webhooks' },

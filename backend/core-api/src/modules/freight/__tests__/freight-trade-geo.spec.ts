@@ -1,6 +1,10 @@
 import { ConflictException, GoneException } from '@nestjs/common';
 import * as crypto from 'crypto';
-import { DONG_NAI_2026_UNITS } from 'shared-types';
+import {
+  DONG_NAI_2026_UNITS,
+  DONG_NAI_PRE_2025_ALIASES,
+  normalizeVietnameseAliasKey,
+} from 'shared-types';
 import { TradeService } from '../../trade/services/trade.service';
 import { GeographyService } from '../../geography/services/geography.service';
 import { PublicTrackingController } from '../../customer/controllers/public-tracking.controller';
@@ -113,6 +117,14 @@ describe('Enterprise Trade/XNK Compliance, Geography 95 & Public Tracking Grant'
       expect(DONG_NAI_2026_UNITS).toHaveLength(95);
       expect(DONG_NAI_2026_UNITS.filter((u) => u.unitType === 'WARD')).toHaveLength(33);
       expect(DONG_NAI_2026_UNITS.filter((u) => u.unitType === 'COMMUNE')).toHaveLength(62);
+      const uniqueKeys = new Set(DONG_NAI_2026_UNITS.map((u) => `${u.unitType}:${u.normalizedName}`));
+      expect(uniqueKeys.size).toBe(95);
+      const uniqueAliases = new Set(
+        DONG_NAI_PRE_2025_ALIASES.map(
+          (a) => `${a.unitType}:${a.unitNormalizedName}:${normalizeVietnameseAliasKey(a.aliasName)}`,
+        ),
+      );
+      expect(uniqueAliases.size).toBe(19);
       expect(DONG_NAI_2026_UNITS.every((u) => u.officialCodeStatus === 'PENDING_OFFICIAL_CODE')).toBe(true);
       expect(DONG_NAI_2026_UNITS.every((u) => u.boundaryStatus === 'NO_OFFICIAL_POLYGON')).toBe(true);
     });

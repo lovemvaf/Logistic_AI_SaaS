@@ -9,11 +9,13 @@ const showToast = (message: string, type: 'error' | 'warning' | 'info' = 'error'
   window.dispatchEvent(event);
 };
 
+const rawInternalUrl = (process.env.API_INTERNAL_URL || 'http://api-gateway:3000').replace(/\/api\/v1\/?$/, '').replace(/\/+$/, '');
+
 const api = axios.create({
   baseURL:
     typeof window === 'undefined'
-      ? process.env.API_INTERNAL_URL || 'http://api-gateway:3000/api/v1'
-      : process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api/v1',
+      ? `${rawInternalUrl}/api/v1`
+      : process.env.NEXT_PUBLIC_API_URL || '/api/v1',
   headers: {
     'Content-Type': 'application/json',
   },

@@ -34,6 +34,16 @@ const SECTIONS: NavSection[] = [
     ],
   },
   {
+    title: 'Doanh nghiệp & XNK',
+    items: [
+      { label: 'Địa giới Đồng Nai', href: '/geography' },
+      { label: 'Container & Booking', href: '/freight' },
+      { label: 'Bãi Cont & EIR', href: '/yard' },
+      { label: 'Chứng từ XNK & HS', href: '/trade' },
+      { label: 'Giá cước, DEM/DET & DLQ', href: '/finance/freight' },
+    ],
+  },
+  {
     title: 'Tài chính',
     items: [
       { label: 'Đối soát COD', href: '/finance/cod' },

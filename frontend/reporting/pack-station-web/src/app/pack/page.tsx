@@ -68,6 +68,7 @@ export default function PackPage() {
   const [scanning, setScanning] = useState(false);
   const [sealing, setSealing] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
+  const [lastScanLatencyMs, setLastScanLatencyMs] = useState<number | null>(null);
   const [scanResult, setScanResult] = useState<{
     result: MatchResult;
     order: PackOrder;
@@ -224,11 +225,11 @@ export default function PackPage() {
 
         if (cancelled) return;
 
-        const sorted = queue.sort((a: PackOrder, b: PackOrder) => {
-          const rankA = PRIORITY_RANK[a.priority];
-          const rankB = PRIORITY_RANK[b.priority];
+        const sorted = [...queue].sort((a: PackOrder, b: PackOrder) => {
+          const rankA = PRIORITY_RANK[a.priority] ?? 2;
+          const rankB = PRIORITY_RANK[b.priority] ?? 2;
           if (rankA !== rankB) return rankA - rankB;
-          return a.scheduledAt.localeCompare(b.scheduledAt);
+          return String(a.scheduledAt || '').localeCompare(String(b.scheduledAt || ''));
         });
         setOrders(sorted);
         setStations(stationList);
@@ -317,8 +318,11 @@ export default function PackPage() {
     setScannedSku(sku);
 
     try {
+      const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
       const input: ScanInput = { packCode, scannedSku: sku, confidence: prediction?.confidence };
       const result = await data.orders.scan(input);
+      const finishedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      setLastScanLatencyMs(Math.max(1, Math.round(finishedAt - startedAt)));
       setScanResult(result);
       if (result.result === 'MATCH') {
         showToast(`Kiện ${packCode} khớp mã đơn hàng.`, 'success');
@@ -403,7 +407,9 @@ export default function PackPage() {
     };
   }, [session]);
 
-  const station: PackStation = stations.find((row) => row.id === session?.stationId) ?? { id: '-', code: '-', name: '-', status: 'OFFLINE' };
+  const station: PackStation =
+    stations.find((row) => row.id === session?.stationId) ??
+    stations[0] ?? { id: '-', code: '-', name: '-', status: 'OFFLINE' };
 
   const isMatch = scanResult?.result === 'MATCH';
   const statusTone = scanError ? 'danger' : isMatch ? 'success' : sessionError ? 'danger' : selectedOrder ? 'info' : 'neutral';
@@ -504,9 +510,13 @@ export default function PackPage() {
                     </div>
                   )}
                 </div>
-                <p className="rounded-md border border-line bg-canvas px-3 py-2 text-[11px] text-ink-faint">
-                  MobileNet ImageNet (chưa fine-tune cho 12 SKU kho) — ngưỡng gợi ý {Math.round(CV_CONFIDENCE_THRESHOLD * 100)}%, luôn cần xác nhận thủ công hoặc barcode. {cvNotice}
-                </p>
+                <div className="flex flex-wrap items-center gap-2 rounded-md border border-line bg-canvas px-3 py-2 text-[11px] text-ink-soft">
+                  <StatusLabel tone="success">Barcode / Scanner: AUTHORITATIVE</StatusLabel>
+                  <StatusLabel tone="warning">MobileNet Camera (&gt;= {Math.round(CV_CONFIDENCE_THRESHOLD * 100)}%): ADVISORY</StatusLabel>
+                  <span>
+                    MobileNet ImageNet (chưa fine-tune cho 12 SKU kho) chỉ gợi ý SKU, không tự động đóng kiện. {cvNotice}
+                  </span>
+                </div>
                 <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-line bg-surface p-3">
                   <div className="flex items-center gap-3">
                     <StatusLabel tone={model && videoReady ? 'success' : 'warning'}>
@@ -611,6 +621,11 @@ export default function PackPage() {
                     <div className="mt-1">
                       Dự kiến: <span className="font-mono">{scanResult.order.expectedSku}</span> —
                       quét: <span className="font-mono">{scanResult.order.scannedSku ?? scannedSku}</span>
+                      {lastScanLatencyMs !== null ? (
+                        <span className="ml-2 font-mono text-ink-faint">
+                          (độ trễ thực đo: {lastScanLatencyMs} ms)
+                        </span>
+                      ) : null}
                     </div>
                   </div>
                 ) : null}

@@ -1,8 +1,10 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import api from '@/lib/api';
+import { isMockDataSource } from '@/lib/data';
 import { mockLogin } from '@/lib/mock';
 import {
   EditorialPageHeader,
@@ -17,19 +19,29 @@ import {
 /**
  * Đăng nhập khách B2B.
  *
- * Chế độ mock: email `buyer@anphat.vn` + mật khẩu bất kỳ tạo một token giả
- * và `useAuth().login(token)` như tenant portal. Không có Google OAuth khi
- * `NEXT_PUBLIC_GOOGLE_CLIENT_ID` chưa được cấu hình.
+ * - Chế độ API (`NEXT_PUBLIC_DATA_SOURCE=api`): gọi `POST /api/v1/client/auth/login`
+ *   với header `x-tenant-slug` thật, không giả lập phiên.
+ * - Chế độ mock: dùng `mockLogin` nội bộ cho demo không backend.
  */
 
 export default function ClientLogin() {
   const { login } = useAuth();
   const router = useRouter();
 
+  const [tenantSlug, setTenantSlug] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const paramSlug = params.get('tenant') || localStorage.getItem('smartlogi_tenant_slug') || '';
+    if (paramSlug && !tenantSlug) {
+      setTenantSlug(paramSlug);
+    }
+  }, [tenantSlug]);
 
   const handleSubmit = useCallback(async (event: React.FormEvent) => {
     event.preventDefault();
@@ -38,26 +50,52 @@ export default function ClientLogin() {
       return;
     }
     setError('');
-    const mockMail = 'buyer@anphat.vn';
 
-    if (email.trim().toLowerCase() !== mockMail) {
-      setError('Email không thuộc tài khoản demo khách hàng.');
+    if (isMockDataSource) {
+      const mockMail = 'buyer@anphat.vn';
+      if (email.trim().toLowerCase() !== mockMail) {
+        setError('Email không thuộc tài khoản demo khách hàng.');
+        return;
+      }
+      setLoading(true);
+      try {
+        const { accessToken } = mockLogin({ email: mockMail, password });
+        login(accessToken);
+        router.push('/client/dashboard');
+      } catch (err: any) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    const slug = tenantSlug.trim();
+    if (!slug) {
+      setError('Vui lòng nhập mã doanh nghiệp (Tenant Slug).');
       return;
     }
 
     setLoading(true);
     try {
-      const { accessToken } = mockLogin({ email: mockMail, password });
-      login(accessToken);
+      const res = await api.post(
+        '/client/auth/login',
+        { email: email.trim(), password },
+        { headers: { 'x-tenant-slug': slug } },
+      );
+      localStorage.setItem('smartlogi_tenant_slug', slug);
+      login(res.data.accessToken);
       router.push('/client/dashboard');
     } catch (err: any) {
-      setError(err.message);
+      const message = err?.response?.data?.message || err?.message || 'Đăng nhập thất bại.';
+      setError(String(message));
     } finally {
       setLoading(false);
     }
-  }, [email, password, login, router]);
+  }, [email, password, tenantSlug, login, router]);
 
   const handleDemoLogin = useCallback(() => {
+    if (!isMockDataSource) return;
     const { accessToken } = mockLogin({
       email: 'buyer@anphat.vn',
       password: 'demo1234',
@@ -72,21 +110,38 @@ export default function ClientLogin() {
         <div className="self-center space-y-6">
           <EditorialPageHeader
             title="Đăng nhập khách B2B"
-            description="Đăng nhập để xem dữ liệu của công ty: đơn, hoá đơn, tồn kho. Giá trị COD chỉ hiển thị khi đã xác thực."
+            description="Đăng nhập để xem dữ liệu của công ty: đơn, hoá đơn, tồn kho, lô hàng container. Giá trị COD chỉ hiển thị khi đã xác thực."
           />
-          <EmptyNote>
-            Tài khoản demo: email `buyer@anphat.vn`, mật khẩu bất kỳ. Thanh toán và tạo
-            đơn chỉ hoạt động khi đăng nhập.
-          </EmptyNote>
+          {isMockDataSource ? (
+            <EmptyNote>
+              Tài khoản demo offline: email `buyer@anphat.vn`, mật khẩu bất kỳ.
+            </EmptyNote>
+          ) : (
+            <EmptyNote>
+              Kết nối backend trực tiếp. Nhập mã doanh nghiệp (Tenant Slug), email và mật khẩu được cấp để đăng nhập cổng khách hàng.
+            </EmptyNote>
+          )}
         </div>
 
         <div className="self-center">
           <form onSubmit={handleSubmit} className="space-y-5">
+            {!isMockDataSource ? (
+              <Input
+                id="client-tenant-slug"
+                type="text"
+                label="Mã doanh nghiệp (Tenant Slug)"
+                placeholder="demo-3pl-dn"
+                required
+                value={tenantSlug}
+                onChange={(event) => setTenantSlug(event.target.value)}
+                disabled={loading}
+              />
+            ) : null}
             <Input
               id="client-email"
               type="email"
               label="Email công ty"
-              placeholder="buyer@anphat.vn"
+              placeholder={isMockDataSource ? 'buyer@anphat.vn' : 'client.owner@company.vn'}
               required
               value={email}
               onChange={(event) => setEmail(event.target.value)}
@@ -118,14 +173,16 @@ export default function ClientLogin() {
               {loading ? 'Đang đăng nhập…' : 'Đăng nhập'}
             </Button>
 
-            <Button
-              type="button"
-              variant="secondary"
-              className="h-11 w-full text-[13px] font-semibold rounded-lg"
-              onClick={handleDemoLogin}
-            >
-              Vào bằng tài khoản thử nghiệm
-            </Button>
+            {isMockDataSource ? (
+              <Button
+                type="button"
+                variant="secondary"
+                className="h-11 w-full text-[13px] font-semibold rounded-lg"
+                onClick={handleDemoLogin}
+              >
+                Vào bằng tài khoản thử nghiệm
+              </Button>
+            ) : null}
           </form>
         </div>
       </div>

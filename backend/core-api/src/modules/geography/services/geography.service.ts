@@ -3,6 +3,7 @@ import {
   DONG_NAI_2026_UNITS,
   DONG_NAI_PRE_2025_ALIASES,
   normalizeVietnameseAdminName,
+  normalizeVietnameseAliasKey,
 } from 'shared-types';
 import { PrismaService } from '../../../core/prisma/prisma.service';
 
@@ -71,11 +72,40 @@ export class GeographyService {
     if (!query) {
       throw new BadRequestException('q parameter is required');
     }
+    const strippedAccented = query
+      .replace(/^(phường|xã|thị trấn|tt\.|p\.|x\.|tp\.|thành phố|huyện|thị xã|tx\.)\s+/i, '')
+      .trim();
     const normalized = normalizeVietnameseAdminName(query);
+    const aliasKey = normalizeVietnameseAliasKey(query);
 
     return this.prisma.runAsPlatform(async (db) => {
+      // 1. Exact accent-aware canonical match first (distinguishes Lộc Thành vs Lộc Thạnh)
+      if (strippedAccented) {
+        const accentedExact = await db.administrativeUnit.findMany({
+          where: { isActive: true, canonicalName: { equals: strippedAccented, mode: 'insensitive' } },
+          include: { aliases: true },
+        });
+        if (accentedExact.length === 1) {
+          return {
+            matched: true,
+            matchedVia: 'CANONICAL_NAME',
+            ambiguous: false,
+            query,
+            normalizedQuery: normalized,
+            unit: accentedExact[0],
+            candidates: accentedExact,
+          };
+        }
+      }
+
       const directExact = await db.administrativeUnit.findMany({
-        where: { isActive: true, normalizedName: normalized },
+        where: {
+          isActive: true,
+          OR: [
+            { normalizedName: normalized },
+            { normalizedName: { startsWith: `${normalized} (` } },
+          ],
+        },
         include: { aliases: true },
       });
 
@@ -103,22 +133,34 @@ export class GeographyService {
       }
 
       const aliasMatches = await db.administrativeAlias.findMany({
-        where: { normalizedAlias: normalized },
+        where: {
+          OR: [
+            { normalizedAlias: aliasKey },
+            { normalizedAlias: normalized },
+            ...(normalized ? [{ normalizedAlias: { endsWith: ` ${normalized}` } }] : []),
+          ],
+        },
         include: { unit: { include: { aliases: true } } },
       });
 
-      if (aliasMatches.length === 1) {
+      const uniqueAliasUnitsMap = new Map<string, any>();
+      for (const a of aliasMatches) {
+        if (a.unit) uniqueAliasUnitsMap.set(a.unit.id, a.unit);
+      }
+      const uniqueAliasUnits = Array.from(uniqueAliasUnitsMap.values());
+
+      if (uniqueAliasUnits.length === 1) {
         return {
           matched: true,
           matchedVia: 'HISTORICAL_ALIAS',
           ambiguous: false,
           query,
           normalizedQuery: normalized,
-          unit: aliasMatches[0].unit,
-          candidates: [aliasMatches[0].unit],
+          unit: uniqueAliasUnits[0],
+          candidates: uniqueAliasUnits,
         };
       }
-      if (aliasMatches.length > 1) {
+      if (uniqueAliasUnits.length > 1) {
         return {
           matched: true,
           matchedVia: 'HISTORICAL_ALIAS_AMBIGUOUS',
@@ -126,7 +168,7 @@ export class GeographyService {
           query,
           normalizedQuery: normalized,
           unit: null,
-          candidates: aliasMatches.map((a: any) => a.unit),
+          candidates: uniqueAliasUnits,
         };
       }
 
@@ -346,7 +388,7 @@ export class GeographyService {
           },
         });
         if (!unit) continue;
-        const normAlias = normalizeVietnameseAdminName(alias.aliasName);
+        const normAlias = normalizeVietnameseAliasKey(alias.aliasName);
         await db.administrativeAlias.upsert({
           where: { unitId_normalizedAlias: { unitId: unit.id, normalizedAlias: normAlias } },
           create: {

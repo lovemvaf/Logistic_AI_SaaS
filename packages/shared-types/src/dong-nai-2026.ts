@@ -24,6 +24,18 @@ export function normalizeVietnameseAdminName(input: string): string {
     .toUpperCase();
 }
 
+export function normalizeVietnameseAliasKey(input: string): string {
+  return String(input || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
+    .replace(/[^a-zA-Z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toUpperCase();
+}
+
 const WARD_NAMES_WITH_CORRIDOR: Array<[string, LogisticsCorridorTag]> = [
   ["Biên Hòa", "CENTRAL"],
   ["Trấn Biên", "CENTRAL"],
@@ -139,7 +151,10 @@ export const DONG_NAI_2026_UNITS: DongNaiUnitMaster[] = [
   })),
   ...COMMUNE_NAMES_WITH_CORRIDOR.map(([canonicalName, corridor]) => ({
     canonicalName,
-    normalizedName: normalizeVietnameseAdminName(canonicalName),
+    normalizedName:
+      canonicalName === "Lộc Thạnh"
+        ? "LOC THANH (NANG)"
+        : normalizeVietnameseAdminName(canonicalName),
     unitType: "COMMUNE" as const,
     corridor,
     officialCodeStatus: "PENDING_OFFICIAL_CODE" as const,

@@ -1,11 +1,15 @@
 /** @type {import('next').NextConfig} */
+const isVercel = process.env.VERCEL === '1';
+
 const nextConfig = {
+  ...(isVercel ? {} : { output: 'standalone' }),
   typescript: { ignoreBuildErrors: false },
   eslint: { ignoreDuringBuilds: true },
   reactStrictMode: true,
-  output: 'standalone',
   async rewrites() {
-    const gateway = process.env.API_INTERNAL_URL || 'http://api-gateway:3000';
+    const rawGateway = process.env.API_INTERNAL_URL || (isVercel ? '' : 'http://api-gateway:3000');
+    const gateway = rawGateway.replace(/\/api\/v1\/?$/, '').replace(/\/+$/, '');
+    if (!gateway) return [];
     return [
       {
         source: '/api/v1/:path*',
@@ -13,6 +17,6 @@ const nextConfig = {
       },
     ];
   },
-}
+};
 
-module.exports = nextConfig
+module.exports = nextConfig;

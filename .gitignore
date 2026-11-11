@@ -73,3 +73,7 @@ __pycache__/
 # Test coverage & stray root screenshots
 coverage/
 admin-login.png
+
+# Local generated demo credential notes (never commit secrets)
+DEMO_ACCOUNTS.local.md
+*.local.md

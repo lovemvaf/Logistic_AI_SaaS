@@ -16,6 +16,7 @@ const NAV_ITEM_ROLES: Record<string, AdminRole[]> = {
   '/admin/orders/upload': ['SUPER_ADMIN', 'TENANT_ADMIN', 'WAREHOUSE_MANAGER'],
   '/admin/shipments': ['SUPER_ADMIN', 'TENANT_ADMIN', 'WAREHOUSE_MANAGER', 'WAREHOUSE_STAFF', 'LOGISTICS_MANAGER', 'DRIVER'],
   '/admin/tenants': ['SUPER_ADMIN', 'TENANT_ADMIN'],
+  '/admin/geography': ['SUPER_ADMIN'],
   '/admin/billing': ['SUPER_ADMIN', 'TENANT_ADMIN'],
   '/admin/audit-logs': ['SUPER_ADMIN', 'TENANT_ADMIN'],
   '/admin/ai-models': ['SUPER_ADMIN', 'WAREHOUSE_MANAGER', 'LOGISTICS_MANAGER'],
@@ -37,6 +38,7 @@ const adminSections: NavSection[] = [
     title: 'Administration',
     items: [
       { label: 'Tenants', href: '/admin/tenants' },
+      { label: 'Dong Nai 2026 & DLQ', href: '/admin/geography' },
       { label: 'Billing', href: '/admin/billing' },
     ],
   },

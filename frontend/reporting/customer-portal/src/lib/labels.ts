@@ -46,23 +46,28 @@ const ORDER_TONES: Record<OrderStatus, Tone> = {
   CANCELLED: 'neutral',
 };
 
-const INVOICE_LABELS: Record<CustomerInvoice['status'], string> = {
+const INVOICE_LABELS: Record<string, string> = {
   DRAFT: 'Bản nháp',
+  PENDING: 'Chờ thanh toán',
+  PARTIAL: 'Thanh toán một phần',
   SENT: 'Đã gửi',
   PAID: 'Đã trả',
   OVERDUE: 'Quá hạn',
   VOID: 'Hủy bỏ',
 };
 
-const INVOICE_TONES: Record<CustomerInvoice['status'], Tone> = {
+const INVOICE_TONES: Record<string, Tone> = {
   DRAFT: 'neutral',
+  PENDING: 'warning',
+  PARTIAL: 'warning',
   SENT: 'info',
   PAID: 'success',
   OVERDUE: 'danger',
   VOID: 'danger',
 };
 
-const RETURN_LABELS: Record<CustomerReturn['status'], string> = {
+const RETURN_LABELS: Record<string, string> = {
+  PENDING: 'Chờ duyệt',
   REQUESTED: 'Chờ duyệt',
   APPROVED: 'Đã duyệt',
   IN_TRANSIT: 'Đang về kho',
@@ -72,7 +77,8 @@ const RETURN_LABELS: Record<CustomerReturn['status'], string> = {
   CLOSED: 'Đã đóng',
 };
 
-const RETURN_TONES: Record<CustomerReturn['status'], Tone> = {
+const RETURN_TONES: Record<string, Tone> = {
+  PENDING: 'warning',
   REQUESTED: 'warning',
   APPROVED: 'info',
   IN_TRANSIT: 'info',
@@ -139,11 +145,17 @@ const dateOnly = new Intl.DateTimeFormat('vi-VN', {
   year: 'numeric',
 });
 
-export const formatCurrency = (value: number | null | undefined) =>
-  typeof value === 'number' && Number.isFinite(value) ? currency.format(value) : '—';
+export const formatCurrency = (value: number | string | null | undefined) => {
+  if (value === null || value === undefined || value === '') return '—';
+  const numeric = typeof value === 'string' ? Number(value) : value;
+  return typeof numeric === 'number' && Number.isFinite(numeric) ? currency.format(numeric) : '—';
+};
 
-export const formatNumber = (value: number | null | undefined) =>
-  typeof value === 'number' && Number.isFinite(value) ? number.format(value) : '—';
+export const formatNumber = (value: number | string | null | undefined) => {
+  if (value === null || value === undefined || value === '') return '—';
+  const numeric = typeof value === 'string' ? Number(value) : value;
+  return typeof numeric === 'number' && Number.isFinite(numeric) ? number.format(numeric) : '—';
+};
 
 export const formatDateTimeVN = (value: string | number | Date | null | undefined) => {
   if (value === null || value === undefined || value === '') return '—';

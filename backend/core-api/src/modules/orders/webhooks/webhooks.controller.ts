@@ -19,6 +19,37 @@ function maskSecretToken(secret?: string | null): string | null {
 export class WebhooksController {
   constructor(private readonly prisma: PrismaService) {}
 
+  @Get("outbox")
+  @RequirePermissions(Permissions.SettingsManage)
+  async listOutboxEvents() {
+    return this.prisma.getTenantDb().outboxEvent.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    });
+  }
+
+  @Post("outbox/:id/redrive")
+  @RequirePermissions(Permissions.SettingsManage)
+  async redriveOutboxEvent(@Param("id") id: string) {
+    const db = this.prisma.getTenantDb();
+    const existing = await db.outboxEvent.findUnique({ where: { id } });
+    if (!existing) {
+      throw new NotFoundException("Outbox event not found");
+    }
+    return db.outboxEvent.update({
+      where: { id },
+      data: {
+        status: "PENDING",
+        attempts: 0,
+        lastError: null,
+        deadLetterReason: null,
+        lockedBy: null,
+        leaseUntil: null,
+        availableAt: new Date(),
+      },
+    });
+  }
+
   @Get()
   @RequirePermissions(Permissions.SettingsManage)
   async listWebhooks(@Request() req: any) {

@@ -6,6 +6,7 @@
     "dev": "next dev -p 4002",
     "build": "next build",
     "start": "next start -p 4002",
+    "vercel-build": "pnpm --filter ui-components build && pnpm --filter ui-kit build && next build",
     "lint": "next lint"
   },
   "dependencies": {

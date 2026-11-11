@@ -242,7 +242,9 @@ export class AuthService {
     if (PrismaService.isSqlite) {
       return callback(this.prisma);
     }
-    return this.prisma.runWithSchema(tenant.dbSchemaName, () => callback(this.prisma.getTenantDb()));
+    return this.prisma.runWithTenantRequest(tenant.id, tenant.dbSchemaName, () =>
+      callback(this.prisma.getTenantDb()),
+    );
   }
 
   /** Emails are stored lowercase; still match case-insensitively on PostgreSQL. */
@@ -494,7 +496,7 @@ export class AuthService {
       return { ok: true, message: 'If this email exists, a reset link has been sent.' };
     }
 
-    return this.prisma.runWithSchema(tenant.dbSchemaName, async () => {
+    return this.prisma.runWithTenantRequest(tenant.id, tenant.dbSchemaName, async () => {
       const prismaWithTenant = this.prisma.getTenantDb();
       const user = await prismaWithTenant.tenantUser.findFirst({ where: { email } });
       if (user) {
@@ -535,7 +537,7 @@ export class AuthService {
       return { ok: true, message: 'Password has been reset successfully.' };
     }
 
-    return this.prisma.runWithSchema(tenant.dbSchemaName, async () => {
+    return this.prisma.runWithTenantRequest(tenant.id, tenant.dbSchemaName, async () => {
       const prismaWithTenant = this.prisma.getTenantDb();
       const user = await prismaWithTenant.tenantUser.findFirst({ where: { email } });
       if (!user || user.resetToken !== token || (user.resetTokenExpiry && user.resetTokenExpiry < new Date())) {

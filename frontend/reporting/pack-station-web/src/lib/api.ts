@@ -9,11 +9,13 @@ const showToast = (message: string, type: 'error' | 'warning' | 'info' = 'error'
   window.dispatchEvent(event);
 };
 
+const rawInternalUrl = (process.env.API_INTERNAL_URL || 'http://api-gateway:3000').replace(/\/api\/v1\/?$/, '').replace(/\/+$/, '');
+
 const api = axios.create({
   baseURL:
     typeof window === 'undefined'
-      ? process.env.API_INTERNAL_URL || 'http://api-gateway:3000/api/v1'
-      : process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api/v1',
+      ? `${rawInternalUrl}/api/v1`
+      : process.env.NEXT_PUBLIC_API_URL || '/api/v1',
   headers: {
     'Content-Type': 'application/json',
   },
@@ -22,8 +24,20 @@ const api = axios.create({
 api.interceptors.request.use((config) => {
   if (typeof window !== 'undefined') {
     const token = localStorage.getItem('smartlogi_pack_token');
+    const userStr = localStorage.getItem('smartlogi_pack_user');
+    const fallbackSlug = localStorage.getItem('smartlogi_tenant_slug');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+    }
+    let resolvedSlug = fallbackSlug || '';
+    if (userStr) {
+      try {
+        const user = JSON.parse(userStr);
+        if (user?.slug) resolvedSlug = user.slug;
+      } catch {}
+    }
+    if (resolvedSlug && !config.headers['x-tenant-slug']) {
+      config.headers['x-tenant-slug'] = resolvedSlug;
     }
   }
   return config;
@@ -42,6 +56,7 @@ api.interceptors.response.use(
       const isAuthRequest = String(error.config?.url || '').includes('/auth/');
       if (!isAuthRequest && typeof window !== 'undefined') {
         localStorage.removeItem('smartlogi_pack_token');
+        localStorage.removeItem('smartlogi_pack_user');
         window.location.href = '/login';
       }
       return Promise.reject(error);

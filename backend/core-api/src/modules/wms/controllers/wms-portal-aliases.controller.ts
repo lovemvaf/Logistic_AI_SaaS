@@ -192,6 +192,74 @@ export class EquipmentController {
 export class PackingSessionsController {
   constructor(private readonly prisma: PrismaService) {}
 
+  private mapScanLog(log: any, stationId: string) {
+    const raw = String(log.deviceId || '');
+    const parts = raw.startsWith('PACK|') || raw.startsWith('PACK-OVERRIDE|') ? raw.split('|') : [];
+    const packCode = parts[1] || log.barcode;
+    const expectedSku = parts[2] || log.barcode;
+    const result = raw.startsWith('PACK-OVERRIDE|')
+      ? 'OVERRIDE'
+      : log.result === 'MATCHED'
+        ? 'MATCH'
+        : 'MISMATCH';
+    return {
+      packCode,
+      trackingCode: packCode,
+      sku: log.barcode,
+      expectedSku,
+      result,
+      stationId,
+      staffId: log.actorId || undefined,
+      scannedAt: log.createdAt instanceof Date ? log.createdAt.toISOString() : String(log.createdAt),
+    };
+  }
+
+  private async enrichShift(shift: any) {
+    const db = this.prisma.getTenantDb();
+    const endWindow = shift.shiftEnd || new Date();
+    const [scanRows, packedCount] = await Promise.all([
+      db.scanLog.findMany({
+        where: {
+          warehouseId: shift.warehouseId,
+          createdAt: { gte: shift.shiftStart, lte: endWindow },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+      }),
+      db.packStationLog.count({
+        where: {
+          warehouseId: shift.warehouseId,
+          createdAt: { gte: shift.shiftStart, lte: endWindow },
+        },
+      }),
+    ]);
+
+    const stationId = shift.warehouse?.code ? `STN-${shift.warehouse.code}` : shift.warehouseId;
+    const scanLogs = scanRows.map((row: any) => this.mapScanLog(row, stationId));
+    const totalMatched = scanLogs.filter((l: any) => l.result === 'MATCH').length;
+    const totalMismatched = scanLogs.filter((l: any) => l.result === 'MISMATCH').length;
+    const totalCorrected = scanLogs.filter((l: any) => l.result === 'OVERRIDE').length;
+    const elapsedSeconds = Math.max(
+      1,
+      Math.round((new Date(endWindow).getTime() - new Date(shift.shiftStart).getTime()) / 1000),
+    );
+
+    return {
+      ...shift,
+      sessionCode: `CA-${String(shift.id).slice(0, 6).toUpperCase()}`,
+      stationId,
+      status: shift.status === 'OPEN' ? 'ACTIVE' : shift.status === 'CLOSED' ? 'CLOSED' : 'SEALING',
+      totalPacked: packedCount,
+      totalMatched,
+      totalMismatched,
+      totalCorrected,
+      elapsedSeconds,
+      startedAt: shift.shiftStart,
+      closedAt: shift.shiftEnd,
+      scanLogs,
+    };
+  }
+
   @Get('active')
   @RequirePermissions(Permissions.InventoryRead)
   async activeSession(@Request() req: any) {
@@ -201,16 +269,20 @@ export class PackingSessionsController {
       include: { warehouse: true, staff: { select: { id: true, fullName: true } } },
       orderBy: { shiftStart: 'desc' },
     });
-    return shift || null;
+    return shift ? this.enrichShift(shift) : null;
   }
 
   @Get('scans')
   @RequirePermissions(Permissions.InventoryRead)
   async listScans() {
-    return this.prisma.getTenantDb().scanLog.findMany({
+    const rows = await this.prisma.getTenantDb().scanLog.findMany({
+      include: { warehouse: { select: { code: true } } },
       orderBy: { createdAt: 'desc' },
       take: 100,
     });
+    return rows.map((row: any) =>
+      this.mapScanLog(row, row.warehouse?.code ? `STN-${row.warehouse.code}` : row.warehouseId),
+    );
   }
 
   @Get('dashboard')
@@ -230,28 +302,39 @@ export class PackingSessionsController {
   @Get()
   @RequirePermissions(Permissions.InventoryRead)
   async list() {
-    return this.prisma.getTenantDb().staffShift.findMany({
+    const shifts = await this.prisma.getTenantDb().staffShift.findMany({
       include: { warehouse: true, staff: { select: { id: true, fullName: true, email: true } } },
       orderBy: { shiftStart: 'desc' },
       take: 50,
     });
+    return Promise.all(shifts.map((shift: any) => this.enrichShift(shift)));
   }
 
   @Post()
   @RequirePermissions(Permissions.PackStationScan)
-  async start(@Body() body: { warehouseId?: string }, @Request() req: any) {
+  async start(
+    @Body() body: { warehouseId?: string; stationId?: string; staffId?: string },
+    @Request() req: any,
+  ) {
     const db = this.prisma.getTenantDb();
     let warehouseId = body?.warehouseId;
+    if (!warehouseId && body?.stationId) {
+      const code = body.stationId.replace(/^STN-/, '');
+      const matched = await db.warehouse.findFirst({ where: { code }, select: { id: true } });
+      warehouseId = matched?.id;
+    }
     if (!warehouseId) {
-      const wh = await db.warehouse.findFirst({ select: { id: true } });
+      const wh = await db.warehouse.findFirst({ where: { status: 'ACTIVE' }, select: { id: true } });
       warehouseId = wh?.id;
     }
     if (!warehouseId || !req.user?.sub) {
       throw new BadRequestException('warehouseId and authenticated user are required');
     }
-    return db.staffShift.create({
+    const created = await db.staffShift.create({
       data: { warehouseId, staffId: req.user.sub, shiftStart: new Date(), status: 'OPEN' },
+      include: { warehouse: true, staff: { select: { id: true, fullName: true } } },
     });
+    return this.enrichShift(created);
   }
 
   @Post(':id/seal')
@@ -259,10 +342,12 @@ export class PackingSessionsController {
   async sealSession(@Param('id') id: string) {
     const existing = await this.prisma.getTenantDb().staffShift.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException(`Packing session ${id} not found`);
-    return this.prisma.getTenantDb().staffShift.update({
+    const updated = await this.prisma.getTenantDb().staffShift.update({
       where: { id },
       data: { shiftEnd: new Date(), status: 'CLOSED' },
+      include: { warehouse: true, staff: { select: { id: true, fullName: true } } },
     });
+    return this.enrichShift(updated);
   }
 
   @Get(':id')
@@ -273,7 +358,7 @@ export class PackingSessionsController {
       include: { warehouse: true, staff: { select: { id: true, fullName: true } } },
     });
     if (!session) throw new NotFoundException(`Packing session ${id} not found`);
-    return session;
+    return this.enrichShift(session);
   }
 }
 
@@ -296,7 +381,7 @@ export class StationsController {
       warehouseId: wh.id,
       name: `${wh.name} - Pack Station`,
       code: wh.code,
-      status: wh.status,
+      status: wh.status === 'ACTIVE' ? 'AVAILABLE' : 'OFFLINE',
     }));
   }
 
@@ -307,7 +392,13 @@ export class StationsController {
       where: { OR: [{ id }, { code: id.replace(/^STN-/, '') }] },
     });
     if (!wh) throw new NotFoundException(`Station ${id} not found`);
-    return { id: `STN-${wh.code}`, warehouseId: wh.id, name: `${wh.name} - Pack Station`, status: wh.status };
+    return {
+      id: `STN-${wh.code}`,
+      warehouseId: wh.id,
+      name: `${wh.name} - Pack Station`,
+      code: wh.code,
+      status: wh.status === 'ACTIVE' ? 'AVAILABLE' : 'OFFLINE',
+    };
   }
 }
 
@@ -321,11 +412,42 @@ export class StaffController {
   @Get()
   @RequirePermissions(Permissions.InventoryRead)
   async list() {
-    return this.prisma.getTenantDb().tenantUser.findMany({
+    const users = await this.prisma.getTenantDb().tenantUser.findMany({
       where: { status: 'ACTIVE' },
       select: { id: true, fullName: true, email: true, status: true },
       orderBy: { fullName: 'asc' },
       take: 100,
     });
+    return users.map((u: any) => ({
+      id: u.id,
+      staffCode: u.id.slice(0, 8).toUpperCase(),
+      fullName: u.fullName,
+      email: u.email,
+      role: 'WAREHOUSE_STAFF',
+      phone: '-',
+    }));
+  }
+
+  @Get(':id')
+  @RequirePermissions(Permissions.InventoryRead)
+  async detail(@Param('id') id: string) {
+    const user = await this.prisma.getTenantDb().tenantUser.findFirst({
+      where: { OR: [{ id }, { email: id }] },
+      select: { id: true, fullName: true, email: true, status: true },
+    });
+    if (!user) throw new NotFoundException(`Staff ${id} not found`);
+    const wh = await this.prisma.getTenantDb().warehouse.findFirst({
+      where: { status: 'ACTIVE', deletedAt: null },
+      select: { code: true },
+    });
+    return {
+      id: user.id,
+      staffCode: user.id.slice(0, 8).toUpperCase(),
+      fullName: user.fullName,
+      email: user.email,
+      role: 'WAREHOUSE_STAFF',
+      phone: '-',
+      stationId: wh ? `STN-${wh.code}` : undefined,
+    };
   }
 }

@@ -27,6 +27,8 @@ export const RolePermissionMap: Record<string, string[]> = {
     "settings:manage",
     "audit-logs:read",
     "billing:read",
+    "clients:manage",
+    "clients:read",
     "api-keys:manage",
     "notifications:read",
     "mobile:sync:pull",
