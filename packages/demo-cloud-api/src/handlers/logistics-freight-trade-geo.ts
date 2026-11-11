@@ -505,6 +505,23 @@ export async function handleLogisticsFreightTradeGeoRoutes(ctx: ApiContext): Pro
         const containerId = body?.containerId ? String(body.containerId) : null;
 
         const overlap = await withTenant(tid, async (tx) => {
+          if (Boolean(body?.simulateConflict)) {
+            const existing = await tx.equipmentAssignment.findFirst({
+              where: { status: 'ACTIVE' },
+              include: { tractor: true, chassis: true, container: true },
+            });
+            if (existing) return { conflict: existing };
+            return {
+              conflict: {
+                id: 'sim-conflict',
+                startAt,
+                endAt,
+                tractor: { unitCode: 'TRC-DN3PL-01' },
+                chassis: null,
+                container: null,
+              },
+            };
+          }
           const conflicts = await tx.equipmentAssignment.findMany({
             where: {
               status: 'ACTIVE',
@@ -601,10 +618,15 @@ export async function handleLogisticsFreightTradeGeoRoutes(ctx: ApiContext): Pro
         const writeErr = assertWriteAllowed(ctx);
         if (writeErr) return writeErr;
         const eventType = String(body?.eventType || 'GATE_IN').toUpperCase();
-        const condition = String(body?.condition || 'GOOD').toUpperCase();
+        const condition = body?.damageFound ? 'DAMAGED' : String(body?.condition || 'GOOD').toUpperCase();
         const res = await withTenant(tid, async (tx) => {
           const yard = body?.yardId ? await tx.yard.findUnique({ where: { id: String(body.yardId) } }) : await tx.yard.findFirst();
-          const container = body?.containerId ? await tx.containerEquipment.findUnique({ where: { id: String(body.containerId) } }) : await tx.containerEquipment.findFirst();
+          const container = body?.containerId
+            ? await tx.containerEquipment.findUnique({ where: { id: String(body.containerId) } })
+            : body?.containerNo
+              ? (await tx.containerEquipment.findFirst({ where: { containerNo: String(body.containerNo).toUpperCase() } })) ||
+                (await tx.containerEquipment.findFirst())
+              : await tx.containerEquipment.findFirst();
           const slot = body?.yardSlotId
             ? await tx.yardSlot.findUnique({ where: { id: String(body.yardSlotId) } })
             : await tx.yardSlot.findFirst({ where: { yardId: yard!.id, status: eventType === 'GATE_IN' ? 'EMPTY' : 'OCCUPIED' } });

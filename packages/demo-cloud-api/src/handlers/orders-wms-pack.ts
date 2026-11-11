@@ -508,13 +508,58 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
     };
   }
 
+  if (path === '/inventory/adjustments' && method === 'GET') {
+    const authErr = requireAuth(ctx);
+    if (authErr) return authErr;
+    const tid = getTenantId(ctx);
+    const page = Math.max(1, Number(query.get('page') || 1));
+    const limit = Math.min(100, Math.max(1, Number(query.get('limit') || 20)));
+    const [rows, total] = await withTenant(tid, async (tx) =>
+      Promise.all([
+        tx.stockMovement.findMany({
+          include: {
+            inventory: { include: { product: { select: { name: true, sku: true } } } },
+            actor: { select: { fullName: true } },
+          },
+          orderBy: { createdAt: 'desc' },
+          skip: (page - 1) * limit,
+          take: limit,
+        }),
+        tx.stockMovement.count(),
+      ]),
+    );
+    return {
+      status: 200,
+      body: {
+        data: rows.map((m) => ({
+          id: m.id,
+          inventoryId: m.inventoryId,
+          warehouseId: m.warehouseId,
+          quantityChange: m.quantityChange,
+          reasonCode: m.reasonCode || m.transactionType || 'ADJUSTMENT',
+          createdAt: iso(m.createdAt),
+          inventory: {
+            product: {
+              name: m.inventory?.product?.name || 'SKU Kho',
+              sku: m.inventory?.product?.sku || '-',
+            },
+          },
+          creator: {
+            fullName: m.actor?.fullName || 'Warehouse Staff',
+          },
+        })),
+        meta: { total, page, limit },
+      },
+    };
+  }
+
   if (method === 'POST' && (path === '/inventory/adjust' || path === '/inventory/receive' || path === '/inventory/transfer')) {
     const writeErr = assertWriteAllowed(ctx);
     if (writeErr) return writeErr;
     const tid = getTenantId(ctx);
     const delta = path === '/inventory/receive'
-      ? Math.abs(Number(body?.quantity || body?.quantityChange || 10))
-      : Number(body?.quantityChange ?? body?.quantity ?? 5);
+      ? Math.abs(Number(body?.quantity || body?.quantityChange || body?.qtyChange || 10))
+      : Number(body?.quantityChange ?? body?.qtyChange ?? body?.quantity ?? 5);
 
     const res = await withTenant(tid, async (tx) => {
       const inv =
@@ -584,13 +629,39 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
     }
   }
 
-  if (path === '/wms/waves' || path === '/waves/generate') {
+  if (path === '/waves' || path === '/wms/waves' || path === '/waves/generate') {
     const authErr = requireAuth(ctx);
     if (authErr) return authErr;
     const tid = getTenantId(ctx);
     if (method === 'GET') {
-      const rows = await withTenant(tid, async (tx) => tx.wavePicking.findMany({ include: { warehouse: true, _count: { select: { tasks: true } } }, orderBy: { createdAt: 'desc' } }));
-      return { status: 200, body: { data: rows.map((w) => ({ ...w, warehouseName: w.warehouse?.name, tasksCount: w._count.tasks, createdAt: iso(w.createdAt) })), meta: { total: rows.length } } };
+      const search = query.get('search')?.trim();
+      const page = Math.max(1, Number(query.get('page') || 1));
+      const limit = Math.min(100, Math.max(1, Number(query.get('limit') || 20)));
+      const where: any = search ? { waveNumber: { contains: search, mode: 'insensitive' } } : {};
+      const [rows, total] = await withTenant(tid, async (tx) =>
+        Promise.all([
+          tx.wavePicking.findMany({
+            where,
+            include: { warehouse: true, tasks: { select: { id: true, status: true, taskType: true } } },
+            orderBy: { createdAt: 'desc' },
+            skip: (page - 1) * limit,
+            take: limit,
+          }),
+          tx.wavePicking.count({ where }),
+        ]),
+      );
+      return {
+        status: 200,
+        body: {
+          data: rows.map((w) => ({
+            ...w,
+            warehouseName: w.warehouse?.name,
+            tasksCount: w.tasks.length,
+            createdAt: iso(w.createdAt),
+          })),
+          meta: { total, page, limit },
+        },
+      };
     }
     if (method === 'POST') {
       const writeErr = assertWriteAllowed(ctx);
@@ -656,7 +727,18 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
     const tid = getTenantId(ctx);
     if (method === 'GET') {
       const rows = await withTenant(tid, async (tx) => tx.equipmentCheckout.findMany({ include: { staff: true }, orderBy: { checkedOutAt: 'desc' } }));
-      return { status: 200, body: { data: rows.map((e) => ({ ...e, staffName: e.staff?.fullName, checkedOutAt: iso(e.checkedOutAt) })), meta: { total: rows.length } } };
+      return {
+        status: 200,
+        body: {
+          data: rows.map((e) => ({
+            ...e,
+            status: e.status === 'CHECKED_OUT' ? 'OUT' : e.status,
+            staffName: e.staff?.fullName || 'Warehouse Staff',
+            checkedOutAt: iso(e.checkedOutAt),
+          })),
+          meta: { total: rows.length },
+        },
+      };
     }
     const writeErr = assertWriteAllowed(ctx);
     if (writeErr) return writeErr;
@@ -664,7 +746,7 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
       const created = await withTenant(tid, async (tx) => {
         const wh = await tx.warehouse.findFirst();
         return tx.equipmentCheckout.create({
-          data: { tenantId: tid, warehouseId: wh!.id, equipmentCode: String(body?.equipmentCode || `SCANNER-${Date.now().toString().slice(-3)}`), staffId: ctx.session!.sub, status: 'CHECKED_OUT' },
+          data: { tenantId: tid, warehouseId: wh!.id, equipmentCode: String(body?.equipmentCode || `SCANNER-${Date.now().toString().slice(-3)}`), staffId: ctx.session!.sub, status: 'OUT' },
         });
       });
       return { status: 201, body: created };
@@ -774,7 +856,13 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
     const tid = getTenantId(ctx);
     const scanned = String(body?.scannedSku || body?.barcode || '').trim();
     const packCode = String(body?.packCode || '').trim();
-    const confidence = body?.confidence !== undefined ? Number(body.confidence) : undefined;
+    const rawConfidence = body?.confidence !== undefined ? Number(body.confidence) : undefined;
+    const confidence =
+      rawConfidence !== undefined && Number.isFinite(rawConfidence)
+        ? rawConfidence > 1
+          ? rawConfidence / 100
+          : rawConfidence
+        : undefined;
 
     const result = await withTenant(tid, async (tx) => {
       const wh = await tx.warehouse.findFirst();

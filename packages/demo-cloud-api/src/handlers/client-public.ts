@@ -691,7 +691,7 @@ export async function handleClientAndPublicRoutes(ctx: ApiContext): Promise<ApiR
               orderId: shp ? null : (targetOrd?.id || null),
               shipmentId: shp ? shp.id : null,
               tokenHash,
-              allowedPrecision: String(body?.allowedPrecision || 'CITY_WARD').toUpperCase(),
+              allowedPrecision: String(body?.allowedPrecision || body?.precision || 'CITY_WARD').toUpperCase(),
               expiresAt: new Date(Date.now() + ttlHours * 3600 * 1000),
               createdBy: ctx.session!.sub,
             },
