@@ -75,6 +75,7 @@ export default function DriverSimulatorPage() {
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawingRef = useRef(false);
+  const initializedTripRef = useRef(false);
   const [hasSigned, setHasSigned] = useState(false);
 
   const loadAll = useCallback(async () => {
@@ -91,7 +92,8 @@ export default function DriverSimulatorPage() {
       setGeofences(Array.isArray(gRes.data?.data) ? gRes.data.data : []);
       setSosList(Array.isArray(sRes.data?.data) ? sRes.data.data : []);
 
-      if (tripList.length > 0 && !selectedTripId) {
+      if (tripList.length > 0 && !initializedTripRef.current) {
+        initializedTripRef.current = true;
         setSelectedTripId(tripList[0].id);
         const firstDel = tripList[0].deliveries?.[0];
         if (firstDel) {
@@ -105,7 +107,7 @@ export default function DriverSimulatorPage() {
         text: err?.response?.data?.message || 'Không tải được dữ liệu Driver Simulator.',
       });
     }
-  }, [selectedTripId]);
+  }, []);
 
   useEffect(() => {
     void loadAll();

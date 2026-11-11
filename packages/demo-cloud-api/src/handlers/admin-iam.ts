@@ -48,6 +48,75 @@ export function assertWriteAllowed(ctx: ApiContext): ApiResult | null {
   return null;
 }
 
+export function assertInternalRole(ctx: ApiContext): ApiResult | null {
+  const unauth = requireAuth(ctx);
+  if (unauth) return unauth;
+  if (ctx.session!.role === 'CUSTOMER_CLIENT') {
+    return {
+      status: 403,
+      body: {
+        code: 'FORBIDDEN_ROLE',
+        message: 'Tài khoản Khách hàng B2B không có quyền truy cập phân hệ vận hành nội bộ.',
+      },
+    };
+  }
+  return null;
+}
+
+async function listOutboxEvents(): Promise<ApiResult> {
+  const rows = await withPlatform(async (tx) =>
+    tx.outboxEvent.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    }),
+  );
+  return {
+    status: 200,
+    body: {
+      data: rows.map((r) => ({ ...r, createdAt: iso(r.createdAt), updatedAt: iso(r.updatedAt) })),
+      meta: { total: rows.length },
+    },
+  };
+}
+
+async function redriveOutboxEvent(ctx: ApiContext, id: string): Promise<ApiResult> {
+  const updated = await withPlatform(async (tx) => {
+    const existing = await tx.outboxEvent.findUnique({ where: { id } });
+    if (!existing) return null;
+    const ev = await tx.outboxEvent.update({
+      where: { id },
+      data: {
+        status: 'PENDING',
+        processedAt: null,
+        availableAt: new Date(),
+        lastError: null,
+        deadLetterReason: null,
+      },
+    });
+    await tx.systemAuditLog.create({
+      data: {
+        tenantId: existing.tenantId,
+        actorId: ctx.session!.sub,
+        actorEmail: ctx.session!.email,
+        action: 'OUTBOX_REDRIVE',
+        resourceType: 'outbox_event',
+        resourceId: id,
+        ipAddress: ctx.ip,
+      },
+    });
+    return ev;
+  });
+  if (!updated) return { status: 404, body: { message: 'Không tìm thấy bản ghi Outbox.' } };
+  await appendSimulationEvent(null, {
+    sandboxKey: ctx.session!.sandboxKey,
+    tenantId: updated.tenantId,
+    category: 'OUTBOX',
+    eventType: 'DLQ_REDRIVEN',
+    summary: `Admin đã redrive sự kiện Outbox ${updated.topic} (${updated.id}) -> PENDING`,
+  });
+  return { status: 200, body: { ok: true, event: updated } };
+}
+
 export async function handleAdminAndIamRoutes(ctx: ApiContext): Promise<ApiResult | null> {
   const { method, path, query, body } = ctx;
 
@@ -479,65 +548,39 @@ export async function handleAdminAndIamRoutes(ctx: ApiContext): Promise<ApiResul
       return { status: 200, body: res };
     }
 
-    if (method === 'GET' && (path === '/admin/dashboard/outbox' || path === '/webhooks/outbox')) {
-      const rows = await withPlatform(async (tx) =>
-        tx.outboxEvent.findMany({
-          orderBy: { createdAt: 'desc' },
-          take: 50,
-        }),
-      );
-      return {
-        status: 200,
-        body: {
-          data: rows.map((r) => ({ ...r, createdAt: iso(r.createdAt), updatedAt: iso(r.updatedAt) })),
-          meta: { total: rows.length },
-        },
-      };
+    if (method === 'GET' && path === '/admin/dashboard/outbox') {
+      return listOutboxEvents();
     }
 
-    const redriveMatch = path.match(/^\/(?:admin\/dashboard\/outbox|webhooks\/outbox)\/([^/]+)\/redrive$/);
-    if (method === 'POST' && redriveMatch) {
+    const adminRedriveMatch = path.match(/^\/admin\/dashboard\/outbox\/([^/]+)\/redrive$/);
+    if (method === 'POST' && adminRedriveMatch) {
       const writeErr = assertWriteAllowed(ctx);
       if (writeErr) return writeErr;
-      const id = redriveMatch[1];
-      const updated = await withPlatform(async (tx) => {
-        const existing = await tx.outboxEvent.findUnique({ where: { id } });
-        if (!existing) return null;
-        const ev = await tx.outboxEvent.update({
-          where: { id },
-          data: { status: 'PROCESSED', processedAt: new Date(), lastError: null, deadLetterReason: null },
-        });
-        await tx.systemAuditLog.create({
-          data: {
-            tenantId: existing.tenantId,
-            actorId: ctx.session!.sub,
-            actorEmail: ctx.session!.email,
-            action: 'OUTBOX_REDRIVE',
-            resourceType: 'outbox_event',
-            resourceId: id,
-            ipAddress: ctx.ip,
-          },
-        });
-        return ev;
-      });
-      if (!updated) return { status: 404, body: { message: 'Không tìm thấy bản ghi Outbox.' } };
-      await appendSimulationEvent(null, {
-        sandboxKey: ctx.session!.sandboxKey,
-        tenantId: updated.tenantId,
-        category: 'OUTBOX',
-        eventType: 'DLQ_REDRIVEN',
-        summary: `Admin đã redrive sự kiện Outbox ${updated.topic} (${updated.id}) -> PROCESSED`,
-      });
-      return { status: 200, body: { ok: true, event: updated } };
+      return redriveOutboxEvent(ctx, adminRedriveMatch[1]);
     }
+  }
+
+  if (method === 'GET' && path === '/webhooks/outbox') {
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
+    return listOutboxEvents();
+  }
+
+  const webhookRedriveMatch = path.match(/^\/webhooks\/outbox\/([^/]+)\/redrive$/);
+  if (method === 'POST' && webhookRedriveMatch) {
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
+    const writeErr = assertWriteAllowed(ctx);
+    if (writeErr) return writeErr;
+    return redriveOutboxEvent(ctx, webhookRedriveMatch[1]);
   }
 
   // --------------------------------------------------------------------------
   // 3. Tenant Dashboard Summary, Users, Roles, API Keys, Webhooks, Settings, Reports, AI
   // --------------------------------------------------------------------------
   if (method === 'GET' && path === '/tenant/dashboard/stats') {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = ctx.session!.tenantId || DEMO_TENANT_IDS.DN3PL;
     const stats = await withTenant(tid, async (tx) => {
       const [deliveries, vehicles, delayed] = await Promise.all([
@@ -551,8 +594,8 @@ export async function handleAdminAndIamRoutes(ctx: ApiContext): Promise<ApiResul
   }
 
   if (method === 'GET' && path === '/dashboard/summary') {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = ctx.session!.tenantId || DEMO_TENANT_IDS.DN3PL;
     const summary = await withTenant(tid, async (tx) => {
       const [orders, delivered, inTransit, returned, trips, activeTrips, lowStock, codAgg, recentOrders] = await Promise.all([
@@ -589,8 +632,8 @@ export async function handleAdminAndIamRoutes(ctx: ApiContext): Promise<ApiResul
   }
 
   if (method === 'GET' && path === '/tenant/audit-logs') {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = ctx.session!.tenantId || DEMO_TENANT_IDS.DN3PL;
     const rows = await withTenant(tid, async (tx) =>
       tx.systemAuditLog.findMany({ orderBy: { createdAt: 'desc' }, take: 100 }),
@@ -599,8 +642,8 @@ export async function handleAdminAndIamRoutes(ctx: ApiContext): Promise<ApiResul
   }
 
   if (path === '/tenant/users' || path === '/users') {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = ctx.session!.tenantId || DEMO_TENANT_IDS.DN3PL;
     if (method === 'GET') {
       const rows = await withTenant(tid, async (tx) =>
@@ -644,6 +687,8 @@ export async function handleAdminAndIamRoutes(ctx: ApiContext): Promise<ApiResul
   }
 
   if (method === 'POST' && path === '/users/invite') {
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const writeErr = assertWriteAllowed(ctx);
     if (writeErr) return writeErr;
     const tid = ctx.session!.tenantId || DEMO_TENANT_IDS.DN3PL;
@@ -661,6 +706,8 @@ export async function handleAdminAndIamRoutes(ctx: ApiContext): Promise<ApiResul
 
   const userStatusMatch = path.match(/^\/users\/([^/]+)\/status$/);
   if (method === 'PATCH' && userStatusMatch) {
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const writeErr = assertWriteAllowed(ctx);
     if (writeErr) return writeErr;
     const tid = ctx.session!.tenantId || DEMO_TENANT_IDS.DN3PL;
@@ -671,8 +718,8 @@ export async function handleAdminAndIamRoutes(ctx: ApiContext): Promise<ApiResul
   }
 
   if (path === '/roles') {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = ctx.session!.tenantId || DEMO_TENANT_IDS.DN3PL;
     if (method === 'GET') {
       const roles = await withTenant(tid, async (tx) =>
@@ -703,8 +750,8 @@ export async function handleAdminAndIamRoutes(ctx: ApiContext): Promise<ApiResul
   }
 
   if (path === '/branches') {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = ctx.session!.tenantId || DEMO_TENANT_IDS.DN3PL;
     if (method === 'GET') {
       const rows = await withTenant(tid, async (tx) => tx.branch.findMany({ where: { deletedAt: null } }));
@@ -730,8 +777,8 @@ export async function handleAdminAndIamRoutes(ctx: ApiContext): Promise<ApiResul
   }
 
   if (path === '/settings') {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = ctx.session!.tenantId || DEMO_TENANT_IDS.DN3PL;
     if (method === 'GET') {
       const rows = await withTenant(tid, async (tx) => tx.tenantSetting.findMany());
@@ -757,8 +804,8 @@ export async function handleAdminAndIamRoutes(ctx: ApiContext): Promise<ApiResul
   }
 
   if (path === '/api-keys') {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = ctx.session!.tenantId || DEMO_TENANT_IDS.DN3PL;
     if (method === 'GET') {
       const rows = await withTenant(tid, async (tx) => tx.tenantApiKey.findMany({ where: { deletedAt: null }, orderBy: { createdAt: 'desc' } }));
@@ -786,6 +833,8 @@ export async function handleAdminAndIamRoutes(ctx: ApiContext): Promise<ApiResul
 
   const revokeKeyMatch = path.match(/^\/api-keys\/([^/]+)\/revoke$/);
   if (method === 'POST' && revokeKeyMatch) {
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const writeErr = assertWriteAllowed(ctx);
     if (writeErr) return writeErr;
     const tid = ctx.session!.tenantId || DEMO_TENANT_IDS.DN3PL;
@@ -796,8 +845,8 @@ export async function handleAdminAndIamRoutes(ctx: ApiContext): Promise<ApiResul
   }
 
   if (path === '/webhooks') {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = ctx.session!.tenantId || DEMO_TENANT_IDS.DN3PL;
     if (method === 'GET') {
       const rows = await withTenant(tid, async (tx) => tx.clientWebhook.findMany({ orderBy: { createdAt: 'desc' } }));
@@ -829,8 +878,8 @@ export async function handleAdminAndIamRoutes(ctx: ApiContext): Promise<ApiResul
   }
 
   if (path.startsWith('/notifications')) {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = ctx.session!.tenantId || DEMO_TENANT_IDS.DN3PL;
     if (method === 'GET' && (path === '/notifications' || path === '/notifications/events')) {
       const rows = await withTenant(tid, async (tx) => tx.notification.findMany({ orderBy: { createdAt: 'desc' }, take: 30 }));
@@ -860,8 +909,8 @@ export async function handleAdminAndIamRoutes(ctx: ApiContext): Promise<ApiResul
   }
 
   if (path.startsWith('/reports/')) {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = ctx.session!.tenantId || DEMO_TENANT_IDS.DN3PL;
     const data = await withTenant(tid, async (tx) => {
       const [orders, delivered, returned, trips, vehicles, invoices] = await Promise.all([
@@ -892,8 +941,8 @@ export async function handleAdminAndIamRoutes(ctx: ApiContext): Promise<ApiResul
   // 4. AI Governance & Honest 501 Training Boundary (/ai/v1/*)
   // --------------------------------------------------------------------------
   if (path === '/ai/v1/models' && method === 'GET') {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const rows = await withPlatform(async (tx) =>
       tx.aiModel.findMany({
         where: { deletedAt: null, ...(ctx.session!.tenantId ? { tenantId: ctx.session!.tenantId } : {}) },
@@ -917,6 +966,8 @@ export async function handleAdminAndIamRoutes(ctx: ApiContext): Promise<ApiResul
 
   const aiActivate = path.match(/^\/ai\/v1\/models\/([^/]+)\/activate$/);
   if (method === 'PATCH' && aiActivate) {
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const writeErr = assertWriteAllowed(ctx);
     if (writeErr) return writeErr;
     const updated = await withPlatform(async (tx) => {
@@ -931,6 +982,8 @@ export async function handleAdminAndIamRoutes(ctx: ApiContext): Promise<ApiResul
 
   const aiDelete = path.match(/^\/ai\/v1\/models\/([^/]+)$/);
   if (method === 'DELETE' && aiDelete) {
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const writeErr = assertWriteAllowed(ctx);
     if (writeErr) return writeErr;
     await withPlatform(async (tx) => tx.aiModel.update({ where: { id: aiDelete[1] }, data: { deletedAt: new Date() } }));
@@ -938,8 +991,8 @@ export async function handleAdminAndIamRoutes(ctx: ApiContext): Promise<ApiResul
   }
 
   if (method === 'GET' && path === '/ai/v1/training-dataset') {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const rows = await withPlatform(async (tx) =>
       tx.aiFeedback.findMany({
         where: { humanCorrected: { not: '' } },
@@ -951,6 +1004,7 @@ export async function handleAdminAndIamRoutes(ctx: ApiContext): Promise<ApiResul
       status: 200,
       body: {
         data: rows.map((r) => ({ ...r, confidence: num(r.confidence), createdAt: iso(r.createdAt) })),
+        count: rows.length,
         meta: { total: rows.length },
       },
     };
@@ -969,8 +1023,8 @@ export async function handleAdminAndIamRoutes(ctx: ApiContext): Promise<ApiResul
   }
 
   if (method === 'POST' && path === '/ai/v1/analyze') {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const [delayedCount, holdCustoms, dlqCount] = await withPlatform(async (tx) =>
       Promise.all([
         tx.customsDeclaration.count({ where: { status: 'HOLD' } }),
@@ -1001,8 +1055,8 @@ export async function handleAdminAndIamRoutes(ctx: ApiContext): Promise<ApiResul
   }
 
   if (method === 'POST' && path === '/ai/v1/chat') {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const prompt = String(body?.message || body?.prompt || '').trim();
     const tid = ctx.session!.tenantId || DEMO_TENANT_IDS.DN3PL;
     const [orders, containers] = await withTenant(tid, async (tx) =>
@@ -1022,8 +1076,8 @@ export async function handleAdminAndIamRoutes(ctx: ApiContext): Promise<ApiResul
   }
 
   if (path === '/tenant/ai-insights') {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     return {
       status: 200,
       body: {
@@ -1055,6 +1109,8 @@ export async function handleAdminAndIamRoutes(ctx: ApiContext): Promise<ApiResul
   }
 
   if (method === 'POST' && /^\/tenant\/ai-insights\/[^/]+\/decision$/.test(path)) {
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const writeErr = assertWriteAllowed(ctx);
     if (writeErr) return writeErr;
     return { status: 200, body: { ok: true, status: body?.status || 'DECIDED' } };

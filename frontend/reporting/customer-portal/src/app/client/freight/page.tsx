@@ -122,22 +122,22 @@ export default function ClientFreightPage() {
       setDisputes(unwrapList<any>(dspRes));
       setGrants(unwrapList<any>(grantRes));
 
-      if (!grantTrackingCode && shpList.length > 0 && shpList[0].trackingCode) {
-        setGrantTrackingCode(shpList[0].trackingCode);
+      if (shpList.length > 0 && shpList[0].trackingCode) {
+        setGrantTrackingCode((prev) => prev || shpList[0].trackingCode);
       }
-      if (!docBookingId && shpList.length > 0 && shpList[0].bookingId) {
-        setDocBookingId(shpList[0].bookingId);
-        setDocShipmentId(shpList[0].id);
+      if (shpList.length > 0 && shpList[0].bookingId) {
+        setDocBookingId((prev) => prev || shpList[0].bookingId);
+        setDocShipmentId((prev) => prev || shpList[0].id);
       }
-      if (!disputeInvoiceId && invList.length > 0) {
-        setDisputeInvoiceId(invList[0].id);
+      if (invList.length > 0) {
+        setDisputeInvoiceId((prev) => prev || invList[0].id);
       }
     } catch (err: any) {
       setError(err?.response?.data?.message || err?.message || 'Không tải được dữ liệu Freight B2B.');
     } finally {
       setLoading(false);
     }
-  }, [disputeInvoiceId, docBookingId, grantTrackingCode]);
+  }, []);
 
   useEffect(() => {
     void loadAll();

@@ -41,7 +41,11 @@ export default function AdminLogin() {
     api
       .get('/demo/personas')
       .then((res) => {
-        const list = Array.isArray(res.data?.data) ? res.data.data : [];
+        const list = Array.isArray(res.data)
+          ? res.data
+          : Array.isArray(res.data?.data)
+            ? res.data.data
+            : [];
         setPersonas(
           list.filter(
             (p: DemoPersona) => p.portal === 'admin' || p.allowedPortals?.includes('admin'),

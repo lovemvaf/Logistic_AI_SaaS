@@ -3,7 +3,7 @@ import { DEMO_TENANT_IDS } from '../auth';
 import { iso, num, withTenant } from '../db';
 import { appendSimulationEvent } from '../scenarios';
 import type { ApiContext, ApiResult } from '../types';
-import { assertWriteAllowed, requireAuth } from './admin-iam';
+import { assertInternalRole, assertWriteAllowed, requireAuth } from './admin-iam';
 
 function getTenantId(ctx: ApiContext): string {
   return ctx.session?.tenantId || DEMO_TENANT_IDS.DN3PL;
@@ -135,6 +135,8 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
   }
 
   if (method === 'POST' && path === '/orders/bulk/upload') {
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const writeErr = assertWriteAllowed(ctx);
     if (writeErr) return writeErr;
     const tid = getTenantId(ctx);
@@ -168,6 +170,8 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
   }
 
   if (method === 'POST' && path === '/orders/assign-trip') {
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const writeErr = assertWriteAllowed(ctx);
     if (writeErr) return writeErr;
     const tid = getTenantId(ctx);
@@ -254,8 +258,8 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
   }
 
   if (path.startsWith('/order-partials')) {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = getTenantId(ctx);
     if (method === 'GET') {
       const rows = await withTenant(tid, async (tx) =>
@@ -278,8 +282,8 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
   // 2. Clients & Customers (/clients*, /tenant/clients*, /customers*)
   // --------------------------------------------------------------------------
   if (path === '/clients' || path === '/tenant/clients' || path === '/customers') {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = getTenantId(ctx);
     if (method === 'GET') {
       const rows = await withTenant(tid, async (tx) =>
@@ -312,6 +316,8 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
 
   const clientCredit = path.match(/^\/tenant\/clients\/([^/]+)\/credit$/);
   if (method === 'PATCH' && clientCredit) {
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const writeErr = assertWriteAllowed(ctx);
     if (writeErr) return writeErr;
     return { status: 200, body: { id: clientCredit[1], creditLimit: num(body?.amount, 500000000), ok: true } };
@@ -321,8 +327,8 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
   // 3. WMS: Products, Warehouses, Inventory, Waves, Tasks, Cycle Counts
   // --------------------------------------------------------------------------
   if (path === '/products' || path === '/wms/products') {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = getTenantId(ctx);
     if (method === 'GET') {
       const rows = await withTenant(tid, async (tx) =>
@@ -364,6 +370,8 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
 
   const prodMatch = path.match(/^\/(?:wms\/)?products\/([^/]+)$/);
   if (prodMatch) {
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = getTenantId(ctx);
     if (method === 'PATCH') {
       const writeErr = assertWriteAllowed(ctx);
@@ -388,14 +396,16 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
   }
 
   if (path === '/products/import' && method === 'POST') {
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const writeErr = assertWriteAllowed(ctx);
     if (writeErr) return writeErr;
     return { status: 200, body: { ok: true, imported: 2, skipped: 0 } };
   }
 
   if (path === '/warehouses' || path === '/warehouses/bins') {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = getTenantId(ctx);
     if (method === 'GET') {
       if (path === '/warehouses/bins') {
@@ -435,8 +445,8 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
   }
 
   if (path === '/inventory' && method === 'GET') {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = getTenantId(ctx);
     const rows = await withTenant(tid, async (tx) =>
       tx.inventory.findMany({
@@ -468,8 +478,8 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
   }
 
   if (path === '/inventory/summary' && method === 'GET') {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = getTenantId(ctx);
     const data = await withTenant(tid, async (tx) => {
       const rows = await tx.inventory.findMany();
@@ -483,8 +493,8 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
   }
 
   if (path === '/inventory/ledger' && method === 'GET') {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = getTenantId(ctx);
     const rows = await withTenant(tid, async (tx) =>
       tx.stockMovement.findMany({
@@ -509,8 +519,8 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
   }
 
   if (path === '/inventory/adjustments' && method === 'GET') {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = getTenantId(ctx);
     const page = Math.max(1, Number(query.get('page') || 1));
     const limit = Math.min(100, Math.max(1, Number(query.get('limit') || 20)));
@@ -554,6 +564,8 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
   }
 
   if (method === 'POST' && (path === '/inventory/adjust' || path === '/inventory/receive' || path === '/inventory/transfer')) {
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const writeErr = assertWriteAllowed(ctx);
     if (writeErr) return writeErr;
     const tid = getTenantId(ctx);
@@ -587,8 +599,8 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
   }
 
   if (method === 'POST' && path === '/inventory/putaway-suggestion') {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = getTenantId(ctx);
     const bin = await withTenant(tid, async (tx) => tx.bin.findFirst());
     return {
@@ -602,8 +614,8 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
   }
 
   if (path.startsWith('/inventory/cycle-counts')) {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = getTenantId(ctx);
     if (method === 'GET') {
       const rows = await withTenant(tid, async (tx) => tx.cycleCount.findMany({ where: { deletedAt: null }, include: { warehouse: true }, orderBy: { createdAt: 'desc' } }));
@@ -630,8 +642,8 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
   }
 
   if (path === '/waves' || path === '/wms/waves' || path === '/waves/generate') {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = getTenantId(ctx);
     if (method === 'GET') {
       const search = query.get('search')?.trim();
@@ -685,8 +697,8 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
   }
 
   if (path.startsWith('/tasks') || path.startsWith('/wms/tasks')) {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = getTenantId(ctx);
     if (method === 'GET') {
       const [rows, bins] = await withTenant(tid, async (tx) =>
@@ -722,8 +734,8 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
   }
 
   if (path.startsWith('/inventory/ops/equipment') || path === '/wms/equipment') {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = getTenantId(ctx);
     if (method === 'GET') {
       const rows = await withTenant(tid, async (tx) => tx.equipmentCheckout.findMany({ include: { staff: true }, orderBy: { checkedOutAt: 'desc' } }));
@@ -762,8 +774,8 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
   // 4. Pack Station Web APIs (/inventory/ops/* & /wms/packing-sessions*, /wms/stations, /wms/staff, /wms/debug/reset)
   // --------------------------------------------------------------------------
   if (path === '/inventory/ops/pack-queue' && method === 'GET') {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = getTenantId(ctx);
     const rows = await withTenant(tid, async (tx) =>
       tx.order.findMany({
@@ -809,8 +821,8 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
   }
 
   if (path === '/inventory/ops/pack-log/next' && method === 'POST') {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = getTenantId(ctx);
     const ord = await withTenant(tid, async (tx) =>
       tx.order.findFirst({
@@ -851,6 +863,8 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
   }
 
   if (path === '/inventory/ops/pack-log/scan' && method === 'POST') {
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const writeErr = assertWriteAllowed(ctx);
     if (writeErr) return writeErr;
     const tid = getTenantId(ctx);
@@ -905,6 +919,8 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
 
   const sealMatch = path.match(/^\/inventory\/ops\/pack-log\/([^/]+)\/seal$/);
   if (sealMatch && method === 'POST') {
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const writeErr = assertWriteAllowed(ctx);
     if (writeErr) return writeErr;
     const tid = getTenantId(ctx);
@@ -921,7 +937,10 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
       const firstItem = ord?.items?.[0];
       const expectedWeightGrams = Math.round(num(firstItem?.product?.weightKg, 1.4) * (firstItem?.quantity || 1) * 1000);
       const deltaPercent = expectedWeightGrams > 0 ? Math.round(((weightGrams - expectedWeightGrams) / expectedWeightGrams) * 100) : 0;
-      const weightWarning = Math.abs(deltaPercent) > 10;
+      const weightOverTolerance = Math.abs(deltaPercent) > 10;
+      const weightWarning = weightOverTolerance
+        ? `Cảnh báo lệch cân (${deltaPercent > 0 ? '+' : ''}${deltaPercent}% so với chuẩn ${expectedWeightGrams}g).`
+        : null;
 
       if (ord) {
         await tx.order.update({ where: { id: ord.id }, data: { status: 'PACKED' } });
@@ -932,7 +951,7 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
             orderId: ord.id,
             status: 'PACKED',
             location: wh?.name || 'Trạm đóng gói ICD Long Bình',
-            description: weightWarning
+            description: weightOverTolerance
               ? `Đóng gói & niêm phong (${weightGrams}g, lệch ${deltaPercent > 0 ? '+' : ''}${deltaPercent}% so với chuẩn ${expectedWeightGrams}g)`
               : `Đóng gói & niêm phong thành công (${weightGrams}g, ${dimensionCm})`,
             timestamp: new Date(),
@@ -956,6 +975,7 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
         weightGrams,
         expectedWeightGrams,
         deltaPercent,
+        weightOverTolerance,
         weightWarning,
         dimensionCm,
         log,
@@ -973,8 +993,8 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
   }
 
   if (path === '/inventory/ops/pack-log/summary' && method === 'GET') {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = getTenantId(ctx);
     const sum = await withTenant(tid, async (tx) => {
       const [sessionsToday, packsToday, matched, mismatched] = await Promise.all([
@@ -996,16 +1016,16 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
   }
 
   if (path === '/inventory/ops/skus' && method === 'GET') {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = getTenantId(ctx);
     const rows = await withTenant(tid, async (tx) => tx.product.findMany({ where: { deletedAt: null } }));
     return { status: 200, body: { data: rows.map((p) => ({ ...p, weightKg: num(p.weightKg, 1), volumeCbm: num(p.volumeCbm, 0.01) })) } };
   }
 
   if (path === '/inventory/ops/corrections' || path.startsWith('/inventory/ops/corrections/')) {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = getTenantId(ctx);
     if (method === 'GET') {
       const rows = await withTenant(tid, async (tx) =>
@@ -1027,10 +1047,60 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
         },
       };
     }
+    const writeErr = assertWriteAllowed(ctx);
+    if (writeErr) return writeErr;
+    if (method === 'POST' && path === '/inventory/ops/corrections') {
+      const packCode = String(body?.packCode || body?.trackingCode || 'PACK-OVERRIDE');
+      const orderSku = String(body?.orderSku || body?.expectedSku || 'SKU-DN3PL-IC8542');
+      const scannedSku = String(body?.scannedSku || orderSku);
+      const reason = String(body?.reason || 'Manual override at pack station');
+      const recId = String(body?.id || `cor-${crypto.randomBytes(6).toString('hex')}`);
+      await withTenant(tid, async (tx) => {
+        const wh = await tx.warehouse.findFirst();
+        if (wh) {
+          await tx.scanLog.create({
+            data: {
+              tenantId: tid,
+              warehouseId: wh.id,
+              barcode: `${packCode}:${scannedSku}`,
+              result: 'OVERRIDDEN',
+              deviceId: 'STN-PACK-01',
+              actorId: ctx.session!.sub,
+            },
+          });
+        }
+        await tx.systemAuditLog.create({
+          data: {
+            tenantId: tid,
+            actorId: ctx.session!.sub,
+            actorEmail: ctx.session!.email,
+            action: 'PACK_SKU_CORRECTION',
+            resourceType: 'pack_order',
+            resourceId: packCode,
+            ipAddress: ctx.ip,
+          },
+        });
+      });
+      return {
+        status: 201,
+        body: {
+          id: recId,
+          packCode,
+          trackingCode: String(body?.trackingCode || packCode),
+          orderSku,
+          scannedSku,
+          reason,
+          status: String(body?.status || 'PENDING'),
+          createdAt: new Date().toISOString(),
+        },
+      };
+    }
     return { status: 200, body: { ok: true, id: path.split('/').pop(), status: body?.status || 'RESOLVED' } };
   }
 
   if (path === '/inventory/ops/pack-log/predict' && method === 'POST') {
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     return {
       status: 200,
       body: {
@@ -1043,8 +1113,8 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
   }
 
   if (path === '/inventory/ops/pack-log/anomalies' && method === 'GET') {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = getTenantId(ctx);
     const logs = await withTenant(tid, async (tx) =>
       tx.scanLog.findMany({ where: { result: 'MISMATCHED' }, orderBy: { createdAt: 'desc' }, take: 15 }),
@@ -1053,8 +1123,8 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
   }
 
   if (path.startsWith('/wms/packing-sessions')) {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = getTenantId(ctx);
     if (method === 'GET' && path === '/wms/packing-sessions') {
       const [shifts, logs, scans] = await withTenant(tid, async (tx) =>
@@ -1161,6 +1231,8 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
   }
 
   if (path === '/wms/stations' && method === 'GET') {
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     return {
       status: 200,
       body: {
@@ -1173,8 +1245,8 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
   }
 
   if (path === '/wms/staff' && method === 'GET') {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = getTenantId(ctx);
     const staff = await withTenant(tid, async (tx) => tx.tenantUser.findMany({ where: { status: 'ACTIVE' } }));
     return {
@@ -1197,8 +1269,8 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
 
   const staffByIdMatch = path.match(/^\/wms\/staff\/([^/]+)$/);
   if (staffByIdMatch && method === 'GET') {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = getTenantId(ctx);
     const staffUser = await withTenant(tid, async (tx) =>
       tx.tenantUser.findFirst({ where: { OR: [{ id: staffByIdMatch[1] }, { id: ctx.session!.sub }] } }),
@@ -1218,6 +1290,8 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
   }
 
   if (path === '/wms/debug/reset' && method === 'POST') {
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     return { status: 200, body: { ok: true, message: 'Pack station queue synchronized with Neon PostgreSQL.' } };
   }
 

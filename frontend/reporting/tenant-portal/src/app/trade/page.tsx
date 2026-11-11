@@ -65,15 +65,17 @@ export default function TradePage() {
       setDocs(dList);
       setDecls(decList);
       setBookings(bList);
-      if (!docBookingId && bList.length > 0) setDocBookingId(bList[0].id);
-      if (!declBookingId && bList.length > 0) setDeclBookingId(bList[0].id);
-      if (!hsDeclId && decList.length > 0) setHsDeclId(decList[0].id);
+      if (bList.length > 0) {
+        setDocBookingId((prev) => prev || bList[0].id);
+        setDeclBookingId((prev) => prev || bList[0].id);
+      }
+      if (decList.length > 0) setHsDeclId((prev) => prev || decList[0].id);
     } catch (err: any) {
       setError(err?.response?.data?.message || err?.message || 'Không tải được hồ sơ XNK.');
     } finally {
       setLoading(false);
     }
-  }, [docBookingId, declBookingId, hsDeclId]);
+  }, []);
 
   useEffect(() => {
     void loadAll();

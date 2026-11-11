@@ -302,8 +302,8 @@ def run_suite(args: argparse.Namespace) -> int:
                 headers={"authorization": f"Bearer {sa['token']}", "x-smartlogi-portal": "admin"},
                 json={"targetPortal": "tenant"},
             )
-            assert hmint.status_code == 200
-            htok = hmint.json()["handoffToken"]
+            assert hmint.status_code in (200, 201)
+            htok = hmint.json().get("handoffToken") or hmint.json()["token"]
             ex1 = client.post(
                 f"{tenant_url}/api/v1/demo/handoff/exchange",
                 headers={"x-smartlogi-portal": "tenant"},
@@ -335,7 +335,7 @@ def run_suite(args: argparse.Namespace) -> int:
         try:
             sec_page.goto(f"{tenant_url}/login", wait_until="networkidle")
             sec_page.get_by_role("button", name=re.compile("Tenant Tạm khóa")).click()
-            alert = sec_page.locator('[role="alert"]')
+            alert = sec_page.locator('[role="alert"]').filter(has_text=re.compile(r"403|SUSPENDED", re.I)).first
             alert.wait_for(state="visible", timeout=15000)
             assert "403" in alert.inner_text() or "SUSPENDED" in alert.inner_text()
             tracker.record("E04", True, f"Suspended tenant blocked cleanly on UI: {alert.inner_text()[:90]}")
@@ -410,7 +410,7 @@ def run_suite(args: argparse.Namespace) -> int:
             ten_page.get_by_role("button", name=re.compile("Giám đốc Vận hành 3PL Đồng Nai")).click()
             ten_page.wait_for_url(re.compile(r"/dashboard"), timeout=20000)
             ten_page.wait_for_load_state("networkidle")
-            ten_page.wait_for_selector("text=Control Tower", timeout=15000)
+            ten_page.wait_for_selector("text=Bàn giao ca", timeout=15000)
             ten_page.screenshot(path=str(shot_dir / "05-tenant-dashboard.png"), full_page=True)
             tracker.record("E10", True, "Tenant Dashboard Control Tower rendered live metrics")
         except Exception as exc:

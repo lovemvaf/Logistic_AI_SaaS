@@ -95,18 +95,18 @@ export default function FreightControlTowerPage() {
       setAssignments(unwrapList<any>(asR));
       setClients(clList);
 
-      if (!rfqClientId && clList.length > 0) setRfqClientId(clList[0].id);
-      if (!quoteRfqId && rfqList.length > 0) setQuoteRfqId(rfqList[0].id);
-      if (!assignTractorId && trList.length > 0) setAssignTractorId(trList[0].id);
-      if (!assignChassisId && chList.length > 0) setAssignChassisId(chList[0].id);
-      if (!assignContainerId && ctList.length > 0) setAssignContainerId(ctList[0].id);
-      if (!assignBookingId && bkList.length > 0) setAssignBookingId(bkList[0].id);
+      if (clList.length > 0) setRfqClientId((prev) => prev || clList[0].id);
+      if (rfqList.length > 0) setQuoteRfqId((prev) => prev || rfqList[0].id);
+      if (trList.length > 0) setAssignTractorId((prev) => prev || trList[0].id);
+      if (chList.length > 0) setAssignChassisId((prev) => prev || chList[0].id);
+      if (ctList.length > 0) setAssignContainerId((prev) => prev || ctList[0].id);
+      if (bkList.length > 0) setAssignBookingId((prev) => prev || bkList[0].id);
     } catch (err: any) {
       setError(err?.response?.data?.message || err?.message || 'Không tải được Control Tower Freight.');
     } finally {
       setLoading(false);
     }
-  }, [rfqClientId, quoteRfqId, assignTractorId, assignChassisId, assignContainerId, assignBookingId]);
+  }, []);
 
   useEffect(() => {
     void loadAll();

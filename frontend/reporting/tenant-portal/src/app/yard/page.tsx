@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import api from '@/lib/api';
 import { isMockDataSource } from '@/lib/data';
 import {
@@ -41,6 +41,8 @@ export default function YardPage() {
   const [inspectorName, setInspectorName] = useState('Kiểm viên Bãi Biên Hòa');
   const [submitting, setSubmitting] = useState(false);
 
+  const selectedYardRef = useRef('');
+
   const loadSlots = useCallback(async (yardId: string) => {
     if (!yardId || isMockDataSource) return;
     try {
@@ -73,24 +75,28 @@ export default function YardPage() {
       setEirs(unwrapList<any>(eR));
       setContainers(cList);
 
-      const targetYard = selectedYardId || yList[0]?.id || '';
+      const targetYard = selectedYardRef.current || yList[0]?.id || '';
       if (targetYard) {
-        setSelectedYardId(targetYard);
+        if (!selectedYardRef.current) {
+          selectedYardRef.current = targetYard;
+          setSelectedYardId(targetYard);
+        }
         await loadSlots(targetYard);
       }
-      if (!containerId && cList.length > 0) setContainerId(cList[0].id);
+      if (cList.length > 0) setContainerId((prev) => prev || cList[0].id);
     } catch (err: any) {
       setError(err?.response?.data?.message || err?.message || 'Không tải được dữ liệu Bãi Cont.');
     } finally {
       setLoading(false);
     }
-  }, [selectedYardId, containerId, loadSlots]);
+  }, [loadSlots]);
 
   useEffect(() => {
     void loadAll();
   }, [loadAll]);
 
   const handleSelectYard = async (yardId: string) => {
+    selectedYardRef.current = yardId;
     setSelectedYardId(yardId);
     setSlotId('');
     await loadSlots(yardId);

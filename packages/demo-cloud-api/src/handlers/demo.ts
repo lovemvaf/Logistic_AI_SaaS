@@ -146,7 +146,7 @@ export async function handleDemoRoutes(ctx: ApiContext): Promise<ApiResult | nul
   // --- Hydrate Current Session & Active Sandbox State ---
   if (method === 'GET' && path === '/demo/me') {
     const sandbox = await getOrCreateSandbox(
-      ctx.session?.sandboxKey || ctx.sandboxKey,
+      ctx.sandboxKey,
       ctx.session?.tenantId || undefined,
       ctx.session?.tenantSlug || 'demo-3pl-dn',
     );
@@ -273,9 +273,10 @@ export async function handleDemoRoutes(ctx: ApiContext): Promise<ApiResult | nul
     }`;
 
     return {
-      status: 201,
+      status: 200,
       body: {
         token: rawToken,
+        handoffToken: rawToken,
         targetPortal,
         targetEmail,
         targetRole,
@@ -287,7 +288,7 @@ export async function handleDemoRoutes(ctx: ApiContext): Promise<ApiResult | nul
 
   // --- Exchange Single-Use Handoff Token ---
   if (method === 'POST' && path === '/demo/handoff/exchange') {
-    const rawToken = String(ctx.body?.token || '').trim();
+    const rawToken = String(ctx.body?.token || ctx.body?.handoffToken || '').trim();
     const targetPortal = (ctx.body?.portal as PortalId) || ctx.portal;
     if (!rawToken) {
       return { status: 400, body: { code: 'TOKEN_REQUIRED', message: 'Thiếu token handoff.' } };
@@ -379,11 +380,20 @@ export async function handleDemoRoutes(ctx: ApiContext): Promise<ApiResult | nul
   }
 
   // --- Load Scenario Preset ---
-  if (method === 'POST' && path === '/demo/scenarios/load') {
-    const code = String(ctx.body?.scenarioCode || ctx.body?.code || 'NORMAL_DAY').toUpperCase();
+  const loadScenarioMatch = path.match(/^\/demo\/scenarios\/([^/]+)\/load$/);
+  if (method === 'POST' && (path === '/demo/scenarios/load' || loadScenarioMatch)) {
+    const code = String(
+      (loadScenarioMatch ? decodeURIComponent(loadScenarioMatch[1]) : '') ||
+        ctx.body?.scenarioCode ||
+        ctx.body?.code ||
+        'NORMAL_DAY',
+    ).toUpperCase();
+    const targetSandboxKey =
+      String(ctx.body?.sandboxKey || ctx.sandboxKey || ctx.session?.sandboxKey || 'shared-demo').trim() ||
+      'shared-demo';
     const res = await applyScenarioPreset({
       scenarioCode: code,
-      sandboxKey: ctx.session?.sandboxKey || ctx.sandboxKey,
+      sandboxKey: targetSandboxKey,
       tenantId: ctx.session?.tenantId,
       tenantSlug: ctx.session?.tenantSlug,
     });
@@ -393,15 +403,17 @@ export async function handleDemoRoutes(ctx: ApiContext): Promise<ApiResult | nul
   // --- Step Simulation Tick ---
   if (method === 'POST' && path === '/demo/scenarios/step') {
     const res = await stepSimulationTick({
-      sandboxKey: ctx.session?.sandboxKey || ctx.sandboxKey,
+      sandboxKey: ctx.sandboxKey,
       tenantId: ctx.session?.tenantId,
     });
     return { status: 200, body: res };
   }
 
   // --- Sandbox Playback & Fault Controls ---
-  if (method === 'POST' && path === '/demo/scenarios/control') {
-    const sandboxKey = ctx.session?.sandboxKey || ctx.sandboxKey;
+  if (method === 'POST' && (path === '/demo/scenarios/control' || path === '/demo/sandbox/config')) {
+    const sandboxKey =
+      String(ctx.body?.sandboxKey || ctx.sandboxKey || ctx.session?.sandboxKey || 'shared-demo').trim() ||
+      'shared-demo';
     const updated = await withPlatform(async (tx) => {
       const curr = await getOrCreateSandbox(sandboxKey);
       const data: any = {};

@@ -65,14 +65,14 @@ export default function FreightFinancePage() {
       setDisputes(unwrapList<any>(dispR));
       setOutboxEvents(unwrapList<any>(obR));
 
-      if (!selectedShipmentId && shList.length > 0) setSelectedShipmentId(shList[0].id);
-      if (!payInvoiceId && invList.length > 0) setPayInvoiceId(invList[0].id);
+      if (shList.length > 0) setSelectedShipmentId((prev) => prev || shList[0].id);
+      if (invList.length > 0) setPayInvoiceId((prev) => prev || invList[0].id);
     } catch (err: any) {
       setError(err?.response?.data?.message || err?.message || 'Không tải được dữ liệu Tài chính Freight.');
     } finally {
       setLoading(false);
     }
-  }, [selectedShipmentId, payInvoiceId]);
+  }, []);
 
   useEffect(() => {
     void loadAll();

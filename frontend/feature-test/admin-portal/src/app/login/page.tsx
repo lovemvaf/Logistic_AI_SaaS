@@ -33,7 +33,11 @@ export default function LoginPage() {
     api
       .get('/demo/personas')
       .then((res) => {
-        const list = Array.isArray(res.data?.data) ? res.data.data : [];
+        const list = Array.isArray(res.data)
+          ? res.data
+          : Array.isArray(res.data?.data)
+            ? res.data.data
+            : [];
         setPersonas(
           list.filter((p: any) => p.portal === 'admin' || p.allowedPortals?.includes('admin')),
         );

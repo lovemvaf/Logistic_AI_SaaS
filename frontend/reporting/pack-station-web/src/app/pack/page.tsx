@@ -134,18 +134,20 @@ export default function PackPage() {
   }, []);
 
   /** Bắt camera; nếu camera bị chặn -> chế độ nhập mã thủ công. */
-  const startVideo = useCallback(async () => {
+  const startVideo = useCallback(async (): Promise<boolean> => {
     if (!navigator.mediaDevices) {
-      setModelError('Trình duyệt không hỗ trợ camera. Chỉ sử dụng được chế độ nhập mã thủ công.');
-      return;
+      setModelError('Trình duyệt không hỗ trợ camera. Chỉ sử dụng được chế độ nhập mã thủ công hoặc Camera Ảo.');
+      return false;
     }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { ...VIDEO_SIZE, facingMode: 'environment', frameRate: 30 },
       });
       if (videoRef.current) videoRef.current.srcObject = stream;
+      return true;
     } catch (err: any) {
       setModelError(`Không mở được camera: ${err?.message || 'thiết bị bị chặn hoặc không có.'}`);
+      return false;
     }
   }, []);
 
@@ -168,17 +170,18 @@ export default function PackPage() {
     }
   }, [model, classifying]);
 
-  /** Load MobileNet + camera; nếu backend không sẵn sàng -> scan-only mode. */
+  /** Mở camera trước; nếu có camera mới nạp MobileNet, tránh tải weights CDN không cần thiết. */
   useEffect(() => {
     let cancelled = false;
 
     const loadModel = async () => {
       try {
+        const cameraAvailable = await startVideo();
+        if (!cameraAvailable || cancelled) return;
         await tf.ready();
         const loadedModel = await mobilenet.load();
         if (cancelled) return;
         setModel(loadedModel);
-        await startVideo();
       } catch (err: any) {
         if (cancelled) return;
         setModelError(

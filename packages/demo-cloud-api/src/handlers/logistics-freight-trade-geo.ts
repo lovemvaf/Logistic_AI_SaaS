@@ -9,7 +9,7 @@ import { DEMO_TENANT_IDS } from '../auth';
 import { iso, num, withPlatform, withTenant } from '../db';
 import { appendSimulationEvent } from '../scenarios';
 import type { ApiContext, ApiResult } from '../types';
-import { assertWriteAllowed, requireAuth } from './admin-iam';
+import { assertInternalRole, assertWriteAllowed, requireAuth } from './admin-iam';
 
 function getTenantId(ctx: ApiContext): string {
   return ctx.session?.tenantId || DEMO_TENANT_IDS.DN3PL;
@@ -44,14 +44,27 @@ function calculateDemDetForShipment(shipment: any, now = new Date()) {
     detentionAmount = tier1 * num(detRule.dailyRateTier1) + tier2 * num(detRule.dailyRateTier2);
   }
 
+  const totalDemDet = demurrageAmount + detentionAmount;
   return {
     shipmentId: shipment.id,
     shipmentNo: shipment.shipmentNo,
+    clocksSeparated: true,
     demurrageBillableDays,
     demurrageAmount,
     detentionBillableDays,
     detentionAmount,
-    totalDemDetAmount: demurrageAmount + detentionAmount,
+    totalDemDetAmount: totalDemDet,
+    totalDemDet,
+    demurrage: {
+      freeDays: demRule?.freeDays ?? 3,
+      chargeableDays: demurrageBillableDays,
+      totalAmount: demurrageAmount,
+    },
+    detention: {
+      freeDays: detRule?.freeDays ?? 5,
+      chargeableDays: detentionBillableDays,
+      totalAmount: detentionAmount,
+    },
     currency: demRule?.currency || 'VND',
   };
 }
@@ -80,6 +93,8 @@ export async function handleLogisticsFreightTradeGeoRoutes(ctx: ApiContext): Pro
         provinceCode: 'DONG_NAI_2026',
         provinceName: 'Thành phố Đồng Nai',
         totalUnits: units.length,
+        wardCount: wards,
+        communeCount: communes,
         wardsCount: wards,
         communesCount: communes,
         aliasesCount: aliases,
@@ -170,6 +185,8 @@ export async function handleLogisticsFreightTradeGeoRoutes(ctx: ApiContext): Pro
 
   const facObsMatch = path.match(/^\/geography\/facilities\/([^/]+)\/queue-observations$/);
   if (method === 'POST' && facObsMatch) {
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const writeErr = assertWriteAllowed(ctx);
     if (writeErr) return writeErr;
     const facId = facObsMatch[1];
@@ -204,8 +221,13 @@ export async function handleLogisticsFreightTradeGeoRoutes(ctx: ApiContext): Pro
   }
 
   if (method === 'POST' && path === '/geography/admin/units/bootstrap-2026') {
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const writeErr = assertWriteAllowed(ctx);
     if (writeErr) return writeErr;
+    if (ctx.session!.role !== 'SUPER_ADMIN') {
+      return { status: 403, body: { code: 'FORBIDDEN_ROLE', message: 'Chỉ Super Admin được bootstrap danh mục hành chính.' } };
+    }
     const result = await withPlatform(async (tx) => {
       let upserted = 0;
       const unitIdMap = new Map<string, string>();
@@ -244,13 +266,20 @@ export async function handleLogisticsFreightTradeGeoRoutes(ctx: ApiContext): Pro
           create: { unitId, aliasName: al.aliasName, normalizedAlias, aliasType: al.aliasType, sourceDoc: 'PRE_2025_REFERENCE' },
         });
       }
-      return { upserted, aliasesCount: DONG_NAI_PRE_2025_ALIASES.length };
+      return {
+        upserted,
+        upsertedUnits: upserted,
+        aliasesCount: DONG_NAI_PRE_2025_ALIASES.length,
+        upsertedAliases: DONG_NAI_PRE_2025_ALIASES.length,
+      };
     });
     return { status: 200, body: { ok: true, ...result } };
   }
 
   const unitOfficialMatch = path.match(/^\/geography\/admin\/units\/([^/]+)\/official$/);
   if (method === 'PATCH' && unitOfficialMatch) {
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const writeErr = assertWriteAllowed(ctx);
     if (writeErr) return writeErr;
     if (ctx.session!.role !== 'SUPER_ADMIN') return { status: 403, body: { message: 'Chỉ Super Admin được cập nhật mã hành chính.' } };
@@ -260,6 +289,7 @@ export async function handleLogisticsFreightTradeGeoRoutes(ctx: ApiContext): Pro
         data: {
           officialCode: body?.officialCode ? String(body.officialCode) : null,
           officialCodeStatus: body?.officialCode ? 'OFFICIAL_VERIFIED' : 'PENDING_OFFICIAL_CODE',
+          ...(body?.geometryGeoJson ? { boundaryStatus: 'OFFICIAL_GIS_POLYGON' } : {}),
           sourceDoc: String(body?.sourceDoc || 'QĐ hành chính cập nhật'),
         },
       }),
@@ -271,8 +301,8 @@ export async function handleLogisticsFreightTradeGeoRoutes(ctx: ApiContext): Pro
   // 2. Freight & Container Dispatch (/freight/*)
   // --------------------------------------------------------------------------
   if (path.startsWith('/freight/')) {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = getTenantId(ctx);
 
     if (method === 'GET' && path === '/freight/summary') {
@@ -576,8 +606,8 @@ export async function handleLogisticsFreightTradeGeoRoutes(ctx: ApiContext): Pro
   // 3. Yard Gate-In / Gate-Out & EIR (/yard/*)
   // --------------------------------------------------------------------------
   if (path.startsWith('/yard/')) {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = getTenantId(ctx);
 
     if (method === 'GET' && path === '/yard/yards') {
@@ -708,8 +738,8 @@ export async function handleLogisticsFreightTradeGeoRoutes(ctx: ApiContext): Pro
   // 4. Trade XNK & Customs Review Gate (/trade/*)
   // --------------------------------------------------------------------------
   if (path.startsWith('/trade/')) {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = getTenantId(ctx);
 
     if (path === '/trade/documents') {
@@ -726,12 +756,27 @@ export async function handleLogisticsFreightTradeGeoRoutes(ctx: ApiContext): Pro
         const writeErr = assertWriteAllowed(ctx);
         if (writeErr) return writeErr;
         const fileName = String(body?.fileName || 'Document.pdf');
-        if (Boolean(body?.passwordProtected) || fileName.toLowerCase().includes('locked') || fileName.toLowerCase().includes('password')) {
+        const simFail = String(body?.simulateFailure || '').toUpperCase();
+        if (
+          simFail === 'PASSWORD_PROTECTED' ||
+          Boolean(body?.passwordProtected) ||
+          fileName.toLowerCase().includes('locked') ||
+          fileName.toLowerCase().includes('password')
+        ) {
           return {
             status: 422,
             body: {
               code: 'PASSWORD_PROTECTED',
               message: `Tệp chứng từ "${fileName}" đang đặt mật khẩu bảo vệ (422 PASSWORD_PROTECTED). Vui lòng mở khóa trước khi tải lên.`,
+            },
+          };
+        }
+        if (simFail === 'CORRUPTED') {
+          return {
+            status: 422,
+            body: {
+              code: 'CORRUPTED_FILE',
+              message: `Tệp chứng từ "${fileName}" bị lỗi cấu trúc PDF (422 CORRUPTED_FILE). Không thể trích xuất OCR/JSON.`,
             },
           };
         }
@@ -768,10 +813,49 @@ export async function handleLogisticsFreightTradeGeoRoutes(ctx: ApiContext): Pro
         const docs = await tx.tradeDocument.findMany({ where: { bookingId: bkId } });
         const ci = docs.find((d) => d.docType === 'COMMERCIAL_INVOICE');
         const pl = docs.find((d) => d.docType === 'PACKING_LIST');
-        const ciW = num((ci?.extractedJson as any)?.grossWeightKg, 0);
-        const plW = num((pl?.extractedJson as any)?.grossWeightKg, 0);
-        const mismatch = ci && pl && ciW !== plW;
-        return { bookingId: bkId, documentsChecked: docs.length, status: mismatch ? 'MISMATCH_FOUND' : 'RECONCILED', ciWeightKg: ciW, plWeightKg: plW };
+        const ciJson = (ci?.extractedJson as any) || {};
+        const plJson = (pl?.extractedJson as any) || {};
+        const ciW = num(ciJson.grossWeightKg, 0);
+        const plW = num(plJson.grossWeightKg, 0);
+        const ciPkg = num(ciJson.packageCount, 0);
+        const plPkg = num(plJson.packageCount, 0);
+        const discrepancies: Array<{
+          severity: string;
+          field: string;
+          sourceA: string;
+          valueA: number;
+          sourceB: string;
+          valueB: number;
+        }> = [];
+        if (ci && pl && ciW !== plW) {
+          discrepancies.push({
+            severity: 'HIGH',
+            field: 'grossWeightKg',
+            sourceA: 'CI',
+            valueA: ciW,
+            sourceB: 'PL',
+            valueB: plW,
+          });
+        }
+        if (ci && pl && ciPkg > 0 && plPkg > 0 && ciPkg !== plPkg) {
+          discrepancies.push({
+            severity: 'MEDIUM',
+            field: 'packageCount',
+            sourceA: 'CI',
+            valueA: ciPkg,
+            sourceB: 'PL',
+            valueB: plPkg,
+          });
+        }
+        return {
+          bookingId: bkId,
+          documentsChecked: docs.length,
+          status: discrepancies.length > 0 ? 'MISMATCH_FOUND' : 'RECONCILED',
+          discrepancyCount: discrepancies.length,
+          discrepancies,
+          ciWeightKg: ciW,
+          plWeightKg: plW,
+        };
       });
       return { status: 200, body: res };
     }
@@ -957,8 +1041,8 @@ export async function handleLogisticsFreightTradeGeoRoutes(ctx: ApiContext): Pro
   }
 
   if (path.startsWith('/pricing/')) {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = getTenantId(ctx);
 
     if (method === 'GET' && path === '/pricing/contracts') {
@@ -1025,8 +1109,8 @@ export async function handleLogisticsFreightTradeGeoRoutes(ctx: ApiContext): Pro
   }
 
   if (path.startsWith('/finance/')) {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = getTenantId(ctx);
     if (path === '/finance/cod-remittances' && method === 'GET') {
       const rows = await withTenant(tid, async (tx) =>
@@ -1132,8 +1216,8 @@ export async function handleLogisticsFreightTradeGeoRoutes(ctx: ApiContext): Pro
   // 6. Logistics Fleet, Trips, Drivers, Geofences, SOS, Returns & Driver Sim
   // --------------------------------------------------------------------------
   if (path === '/logistics/shipments' && method === 'GET') {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const limit = Math.min(100, Math.max(1, Number(query.get('limit') || 20)));
     const rows = await withPlatform(async (tx) =>
       tx.delivery.findMany({
@@ -1163,8 +1247,8 @@ export async function handleLogisticsFreightTradeGeoRoutes(ctx: ApiContext): Pro
   }
 
   if (path.startsWith('/logistics/trips')) {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = getTenantId(ctx);
     if (method === 'GET' && path === '/logistics/trips') {
       const rows = await withTenant(tid, async (tx) =>
@@ -1256,8 +1340,8 @@ export async function handleLogisticsFreightTradeGeoRoutes(ctx: ApiContext): Pro
   }
 
   if (path === '/logistics/drivers' || path === '/logistics/drivers/ranking') {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = getTenantId(ctx);
     const rows = await withTenant(tid, async (tx) =>
       tx.driver.findMany({ where: { deletedAt: null }, include: { user: true, _count: { select: { deliveries: true, trips: true } } } }),
@@ -1283,30 +1367,32 @@ export async function handleLogisticsFreightTradeGeoRoutes(ctx: ApiContext): Pro
 
   const drvLog = path.match(/^\/logistics\/drivers\/([^/]+)\/trip-log$/);
   if (drvLog && method === 'GET') {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = getTenantId(ctx);
     const logs = await withTenant(tid, async (tx) => tx.gpsTrackingLog.findMany({ where: { driverId: drvLog[1] }, orderBy: { timestamp: 'desc' }, take: 30 }));
     return { status: 200, body: { data: logs.map((l) => ({ ...l, lat: num(l.lat), lng: num(l.lng), speedKmh: num(l.speed), timestamp: iso(l.timestamp) })) } };
   }
 
   if (path === '/logistics/vehicles' || path === '/logistics/vehicles/fleet') {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = getTenantId(ctx);
     const rows = await withTenant(tid, async (tx) => tx.vehicle.findMany({ where: { deletedAt: null } }));
     return { status: 200, body: { data: rows.map((v) => ({ ...v, capacityKg: num(v.capacityKg), capacityCbm: num(v.capacityCbm) })), meta: { total: rows.length } } };
   }
 
   if (path === '/logistics/vehicles/fuel' || path === '/logistics/vehicles/maintenance') {
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const writeErr = assertWriteAllowed(ctx);
     if (writeErr) return writeErr;
     return { status: 201, body: { ok: true, loggedAt: new Date().toISOString(), ...body } };
   }
 
   if (path === '/logistics/geofences') {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const rows = await withPlatform(async (tx) =>
       tx.facilityGeofence.findMany({ include: { facility: true } }),
     );
@@ -1314,8 +1400,8 @@ export async function handleLogisticsFreightTradeGeoRoutes(ctx: ApiContext): Pro
   }
 
   if (path.startsWith('/logistics/sos')) {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = getTenantId(ctx);
     if (method === 'GET' && path === '/logistics/sos') {
       const rows = await withTenant(tid, async (tx) =>
@@ -1345,8 +1431,8 @@ export async function handleLogisticsFreightTradeGeoRoutes(ctx: ApiContext): Pro
   }
 
   if (path.startsWith('/logistics/returns')) {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = getTenantId(ctx);
     if (method === 'GET' && path === '/logistics/returns') {
       const rows = await withTenant(tid, async (tx) =>
@@ -1366,6 +1452,8 @@ export async function handleLogisticsFreightTradeGeoRoutes(ctx: ApiContext): Pro
   }
 
   if (method === 'POST' && path === '/logistics/routing/optimize-async') {
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const writeErr = assertWriteAllowed(ctx);
     if (writeErr) return writeErr;
     const tid = getTenantId(ctx);
@@ -1384,6 +1472,8 @@ export async function handleLogisticsFreightTradeGeoRoutes(ctx: ApiContext): Pro
   }
 
   if (method === 'POST' && path === '/logistics/finance/ai/feedback') {
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const writeErr = assertWriteAllowed(ctx);
     if (writeErr) return writeErr;
     return { status: 201, body: { ok: true, recorded: true } };
@@ -1393,8 +1483,8 @@ export async function handleLogisticsFreightTradeGeoRoutes(ctx: ApiContext): Pro
   // 7. Mobile Driver Simulator & GPS Telemetry (/mobile/*, /driver-app/*, /gps/batch)
   // --------------------------------------------------------------------------
   if (path === '/mobile/trips' && method === 'GET') {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = getTenantId(ctx);
     const rows = await withTenant(tid, async (tx) =>
       tx.trip.findMany({
@@ -1424,16 +1514,16 @@ export async function handleLogisticsFreightTradeGeoRoutes(ctx: ApiContext): Pro
 
   const mobStops = path.match(/^\/mobile\/trips\/([^/]+)\/stops$/);
   if (mobStops && method === 'GET') {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = getTenantId(ctx);
     const rows = await withTenant(tid, async (tx) => tx.delivery.findMany({ where: { tripId: mobStops[1] }, include: { order: true }, orderBy: { stopSequence: 'asc' } }));
     return { status: 200, body: { data: rows.map((d) => ({ ...d, trackingCode: d.order?.trackingCode, codAmountExpected: num(d.codAmountExpected), codAmountCollected: num(d.codAmountCollected) })) } };
   }
 
   if (path === '/mobile/wallet' && method === 'GET') {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const tid = getTenantId(ctx);
     const [rems, exps] = await withTenant(tid, async (tx) => Promise.all([tx.codRemittance.findMany({ take: 10 }), tx.driverExpense.findMany({ take: 10 })]));
     return {
@@ -1447,12 +1537,14 @@ export async function handleLogisticsFreightTradeGeoRoutes(ctx: ApiContext): Pro
   }
 
   if (path === '/driver-app/profile' && method === 'GET') {
-    const authErr = requireAuth(ctx);
-    if (authErr) return authErr;
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     return { status: 200, body: { id: ctx.session!.sub, email: ctx.session!.email, fullName: ctx.session!.fullName, licenseClass: 'FC', tenantSlug: ctx.session!.tenantSlug } };
   }
 
   if ((path === '/mobile/gps-batch' || path === '/gps/batch') && method === 'POST') {
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const writeErr = assertWriteAllowed(ctx);
     if (writeErr) return writeErr;
     const tid = getTenantId(ctx);
@@ -1485,6 +1577,8 @@ export async function handleLogisticsFreightTradeGeoRoutes(ctx: ApiContext): Pro
 
   const mobPod = path.match(/^\/mobile\/uploads\/pod\/([^/]+)$/);
   if (mobPod && method === 'POST') {
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
     const writeErr = assertWriteAllowed(ctx);
     if (writeErr) return writeErr;
     const tid = getTenantId(ctx);
