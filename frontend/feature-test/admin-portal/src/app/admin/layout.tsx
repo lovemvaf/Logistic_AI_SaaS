@@ -58,7 +58,13 @@ const adminSections: NavSection[] = [
 ];
 
 // Public admin routes that should render without the admin shell.
-const ADMIN_PUBLIC_ROUTES = ['/admin/login', '/admin/forgot-password', '/admin/reset-password'];
+const ADMIN_PUBLIC_ROUTES = [
+  '/admin/login',
+  '/admin/forgot-password',
+  '/admin/reset-password',
+  '/demo-handoff',
+  '/build-info',
+];
 
 function pageTitle(pathname: string) {
   const parts = pathname.split('/').filter(Boolean);
@@ -127,21 +133,21 @@ function AdminChrome({ children }: { children: React.ReactNode }) {
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { token, user, isLoading } = useAuth();
+  const { isAuthenticated, user, isLoading } = useAuth();
 
   const isPublicRoute = ADMIN_PUBLIC_ROUTES.some(
     (route) => pathname === route || pathname.startsWith(route + '/'),
   );
 
   useEffect(() => {
-    if (!isPublicRoute && !isLoading && typeof window !== 'undefined' && !token) {
+    if (!isPublicRoute && !isLoading && typeof window !== 'undefined' && !isAuthenticated) {
       router.push('/admin/login');
       return;
     }
-    if (!isPublicRoute && token && user?.role && !roleCanAccessPage(user?.role, pathname)) {
+    if (!isPublicRoute && isAuthenticated && user?.role && !roleCanAccessPage(user?.role, pathname)) {
       router.replace(getDefaultPageForRole(user?.role));
     }
-  }, [isPublicRoute, isLoading, router, token, user?.role, pathname]);
+  }, [isPublicRoute, isLoading, router, isAuthenticated, user?.role, pathname]);
 
   // Public auth pages — render children directly without sidebar/topbar.
   if (isPublicRoute) {
@@ -149,7 +155,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   }
 
   // Wait for the stored session before deciding to redirect.
-  if (isLoading || !token) {
+  if (isLoading || !isAuthenticated) {
     return (
       <div className="flex min-h-[100dvh] items-center justify-center bg-background text-ink">
         <div className="rounded-lg border border-border bg-surface px-6 py-4">

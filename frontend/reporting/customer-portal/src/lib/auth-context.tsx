@@ -1,12 +1,13 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { getToken, setToken, clearToken, getUser } from './auth';
+import { getToken, setToken, setUserRecord, clearToken, getUser } from './auth';
 
 interface AuthContextType {
   token: string | null;
   user: any | null;
-  login: (token: string) => void;
+  isAuthenticated: boolean;
+  login: (token: string, customUser?: Record<string, any>) => void;
   logout: () => void;
   isLoading: boolean;
 }
@@ -14,6 +15,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType>({
   token: null,
   user: null,
+  isAuthenticated: false,
   login: () => {},
   logout: () => {},
   isLoading: true,
@@ -25,19 +27,44 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    let active = true;
     const storedToken = getToken();
+    const storedUser = getUser();
     if (storedToken) {
       setTokenState(storedToken);
+      if (storedUser) setUser(storedUser);
+      setIsLoading(false);
+      return;
     }
-    const storedUser = getUser();
-    if (storedUser) {
-      setUser(storedUser);
-    }
-    setIsLoading(false);
+
+    const hydrateCookie = async () => {
+      try {
+        const res = await fetch('/api/v1/demo/me', {
+          credentials: 'include',
+          headers: { 'x-smartlogi-portal': 'customer' },
+        });
+        if (active && res.ok) {
+          const data = await res.json();
+          if (data?.authenticated && data?.user) {
+            setUserRecord(data.user);
+            setUser(data.user);
+          }
+        }
+      } catch {
+        // Ignore
+      } finally {
+        if (active) setIsLoading(false);
+      }
+    };
+
+    void hydrateCookie();
+    return () => {
+      active = false;
+    };
   }, []);
 
-  const login = (newToken: string) => {
-    setToken(newToken);
+  const login = (newToken: string, customUser?: Record<string, any>) => {
+    setToken(newToken, customUser);
     setTokenState(newToken);
     const storedUser = getUser();
     if (storedUser) setUser(storedUser);
@@ -47,10 +74,19 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     clearToken();
     setTokenState(null);
     setUser(null);
+    if (typeof window !== 'undefined') {
+      void fetch('/api/v1/demo/logout', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'x-smartlogi-portal': 'customer' },
+      }).catch(() => undefined);
+    }
   };
 
   return (
-    <AuthContext.Provider value={{ token, user, login, logout, isLoading }}>
+    <AuthContext.Provider
+      value={{ token, user, isAuthenticated: Boolean(token || user), login, logout, isLoading }}
+    >
       {children}
     </AuthContext.Provider>
   );

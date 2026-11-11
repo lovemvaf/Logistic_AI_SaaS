@@ -8,7 +8,7 @@ interface AuthContextType {
   user: any | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (token: string, user: any) => void;
+  login: (token: string, user?: any) => void;
   logout: () => void;
 }
 
@@ -20,13 +20,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    let active = true;
     const storedToken = getToken();
     const storedUser = getUser();
     if (storedToken) {
       setTokenState(storedToken);
       setUserState(storedUser || null);
+      setIsLoading(false);
+      return;
     }
-    setIsLoading(false);
+
+    const hydrateCookie = async () => {
+      try {
+        const res = await fetch("/api/v1/demo/me", {
+          credentials: "include",
+          headers: { "x-smartlogi-portal": "pack" },
+        });
+        if (active && res.ok) {
+          const data = await res.json();
+          if (data?.authenticated && data?.user) {
+            setUser(data.user);
+            setUserState(data.user);
+          }
+        }
+      } catch {
+        // Ignore
+      } finally {
+        if (active) setIsLoading(false);
+      }
+    };
+
+    void hydrateCookie();
+    return () => {
+      active = false;
+    };
   }, []);
 
   const login = useCallback((newToken: string, newUser?: any) => {
@@ -40,13 +67,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     clearAuth();
     setTokenState(null);
     setUserState(null);
+    if (typeof window !== "undefined") {
+      void fetch("/api/v1/demo/logout", {
+        method: "POST",
+        credentials: "include",
+        headers: { "x-smartlogi-portal": "pack" },
+      }).catch(() => undefined);
+    }
   }, []);
 
   const value = React.useMemo(
     () => ({
       token,
       user,
-      isAuthenticated: !!token,
+      isAuthenticated: Boolean(token || user),
       isLoading,
       login,
       logout,

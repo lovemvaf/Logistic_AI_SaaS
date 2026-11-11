@@ -6,6 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import api from '@/lib/api';
 import { data, isMockDataSource } from '@/lib/data';
 import {
+  DemoControlCenter,
   EditorialPageHeader,
   EditorialSection,
   MetricBand,
@@ -408,6 +409,9 @@ export default function TrackPage({ params }: { params: Promise<{ code: string }
   return (
     <Suspense fallback={<div className="min-h-[100dvh] bg-canvas p-6 text-[13px] text-ink-soft">Đang tải thông tin tra cứu...</div>}>
       <TrackContent code={code} />
+      {process.env.NEXT_PUBLIC_DEMO_MODE === 'true' ? (
+        <DemoControlCenter variant="floating" portalOverride="customer" />
+      ) : null}
     </Suspense>
   );
 }

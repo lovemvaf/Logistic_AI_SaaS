@@ -11,7 +11,14 @@ type AppShellProps = {
 };
 
 // Routes that should render without the shell (auth pages, admin public routes)
-const PUBLIC_ROUTES = ['/login', '/admin/login', '/admin/forgot-password', '/admin/reset-password'];
+const PUBLIC_ROUTES = [
+  '/login',
+  '/admin/login',
+  '/admin/forgot-password',
+  '/admin/reset-password',
+  '/demo-handoff',
+  '/build-info',
+];
 
 export default function AppShell({ children }: AppShellProps) {
   const pathname = usePathname();

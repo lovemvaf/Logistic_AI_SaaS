@@ -1,0 +1,29 @@
+{
+  "name": "demo-cloud-api",
+  "private": true,
+  "version": "0.1.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "dev": "tsc -w",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@prisma/client": "5.18.0",
+    "bcryptjs": "^2.4.3",
+    "shared-types": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^20.12.7",
+    "prisma": "5.18.0",
+    "typescript": "^5.5.3"
+  }
+}

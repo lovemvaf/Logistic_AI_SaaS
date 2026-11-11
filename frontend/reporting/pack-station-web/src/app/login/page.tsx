@@ -2,162 +2,213 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import api from '@/lib/api';
 import { isMockDataSource } from '@/lib/data';
 import { mockLogin } from '@/lib/mock';
-import { EditorialPageHeader, EmptyNote, StatusLabel } from 'ui-kit';
+import {
+  DemoControlCenter,
+  EditorialPageHeader,
+  EmptyNote,
+  StatusLabel,
+} from 'ui-kit';
 import { Input, Button } from 'ui-components';
 
-/** Giải mã payload base64url của JWT để lấy `staffId` / `stationId` / `slug` cho phiên. */
+type DemoPersona = {
+  key: string;
+  portal: string;
+  allowedPortals: string[];
+  tenantSlug: string;
+  role: string;
+  email: string;
+  title: string;
+  description: string;
+  defaultPath: string;
+};
+
 function decodePayload(token: string) {
   const segment = token.split('.')[1];
   if (!segment) throw new Error('Token không hợp lệ.');
   const base64 = segment.replace(/-/g, '+').replace(/_/g, '/');
   const padding = (4 - (base64.length % 4)) % 4;
-  const bytes = atob(base64 + '='.repeat(padding));
-  return JSON.parse(utf8toString(bytes)) as Record<string, unknown>;
+  const binary = atob(base64 + '='.repeat(padding));
+  const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+  return JSON.parse(new TextDecoder().decode(bytes)) as Record<string, unknown>;
 }
-
-/** Chuyển byte (0-255) hạ giải từ base64 thành ký tự UTF-8. */
-function utf8toString(bytes: string) {
-  const code = Array.from(bytes).map((b) => b.charCodeAt(0));
-  let result = '';
-  let i = 0;
-  while (i < code.length) {
-    const a = code[i];
-    const b1 = code[i + 1] ?? 0;
-    const b2 = code[i + 2] ?? 0;
-    const b3 = code[i + 3] ?? 0;
-    if (a < 0x80) {
-      result += String.fromCharCode(a);
-      i += 1;
-      continue;
-    }
-    if ((a & 0xe0) === 0xc0) {
-      result += String.fromCharCode(((a & 0x1f) << 6) | (b1 & 0x3f));
-      i += 2;
-      continue;
-    }
-    if ((a & 0xf0) === 0xe0) {
-      result += String.fromCharCode(((a & 0x0f) << 12) | ((b1 & 0x3f) << 6) | (b2 & 0x3f));
-      i += 3;
-      continue;
-    }
-    if ((a & 0xf8) === 0xf0) {
-      result += String.fromCharCode(((a & 0x07) << 18) | ((b1 & 0x3f) << 12) | ((b2 & 0x3f) << 6) | (b3 & 0x3f));
-      i += 4;
-      continue;
-    }
-    result += String.fromCharCode(a);
-    i += 1;
-  }
-  return result;
-}
-
-/**
- * Đăng nhập trạm đóng gói.
- *
- * - Chế độ API (`NEXT_PUBLIC_DATA_SOURCE=api`): gọi `POST /api/v1/tenant/auth/login`
- *   với header `x-tenant-slug` và `x-portal: pack-station`.
- * - Chế độ mock: giữ nhánh `mockLogin` khi không kết nối backend.
- */
 
 export default function PackStationLogin() {
   const { login } = useAuth();
   const router = useRouter();
+  const isDemoMode = process.env.NEXT_PUBLIC_DEMO_MODE === 'true';
 
-  const [tenantSlug, setTenantSlug] = useState('');
+  const [tenantSlug, setTenantSlug] = useState(
+    !isMockDataSource && isDemoMode ? 'demo-3pl-dn' : '',
+  );
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [personas, setPersonas] = useState<DemoPersona[]>([]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
-    const paramSlug = params.get('tenant') || localStorage.getItem('smartlogi_tenant_slug') || '';
-    if (paramSlug && !tenantSlug) {
-      setTenantSlug(paramSlug);
+    const paramSlug =
+      params.get('tenant') ||
+      localStorage.getItem('smartlogi_tenant_slug') ||
+      (!isMockDataSource && isDemoMode ? 'demo-3pl-dn' : '');
+    if (paramSlug) {
+      setTenantSlug((prev) => prev || paramSlug);
     }
-  }, [tenantSlug]);
+  }, [isDemoMode]);
 
-  const performMockLogin = useCallback(async (credentialEmail: string, credentialPassword: string) => {
-    const { accessToken } = mockLogin({ email: credentialEmail, password: credentialPassword });
-    const payload = decodePayload(accessToken);
-    login(accessToken, {
-      fullName: payload.fullName as string,
-      email: payload.email as string,
-      role: payload.role as string,
-      staffId: payload.staffId as string,
-      stationId: payload.stationId as string,
-    });
-    router.push('/pack');
-  }, [login, router]);
+  useEffect(() => {
+    if (isMockDataSource || !isDemoMode) return;
+    api
+      .get('/demo/personas')
+      .then((res) => {
+        const list = Array.isArray(res.data?.data) ? res.data.data : [];
+        setPersonas(
+          list.filter(
+            (p: DemoPersona) => p.portal === 'pack' || p.allowedPortals?.includes('pack'),
+          ),
+        );
+      })
+      .catch(() => undefined);
+  }, [isDemoMode]);
 
-  const handleSubmit = useCallback(async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!email.trim() || !password.trim()) {
-      setError('Vui lòng nhập email và mật khẩu.');
-      return;
-    }
-    setError('');
+  const performMockLogin = useCallback(
+    async (credentialEmail: string, credentialPassword: string) => {
+      const { accessToken } = mockLogin({
+        email: credentialEmail,
+        password: credentialPassword,
+      });
+      const payload = decodePayload(accessToken);
+      login(accessToken, {
+        fullName: payload.fullName as string,
+        email: payload.email as string,
+        role: payload.role as string,
+        staffId: payload.staffId as string,
+        stationId: payload.stationId as string,
+      });
+      router.push('/pack');
+    },
+    [login, router],
+  );
 
-    if (isMockDataSource) {
-      const mockMail = 'pack@smartlogi.vn';
-      if (email.trim().toLowerCase() !== mockMail) {
-        setError('Email không thuộc tài khoản demo nhân viên trạm.');
+  const handleSubmit = useCallback(
+    async (event: React.FormEvent) => {
+      event.preventDefault();
+      if (!email.trim() || !password.trim()) {
+        setError('Vui lòng nhập email và mật khẩu.');
+        return;
+      }
+      setError('');
+
+      if (isMockDataSource) {
+        const mockMail = 'pack@smartlogi.vn';
+        if (email.trim().toLowerCase() !== mockMail) {
+          setError('Email không thuộc tài khoản demo nhân viên trạm.');
+          return;
+        }
+        setLoading(true);
+        try {
+          await performMockLogin(mockMail, password);
+        } catch (err: any) {
+          setError(err.message);
+        } finally {
+          setLoading(false);
+        }
+        return;
+      }
+
+      const slug = tenantSlug.trim();
+      if (!slug) {
+        setError('Vui lòng nhập mã doanh nghiệp (Tenant Slug).');
         return;
       }
 
       setLoading(true);
       try {
-        await performMockLogin(mockMail, password);
+        const res = await api.post(
+          '/tenant/auth/login',
+          { email: email.trim(), password },
+          {
+            headers: {
+              'x-tenant-slug': slug,
+              'x-smartlogi-portal': 'pack',
+              'x-portal': 'pack-station',
+            },
+          },
+        );
+        const accessToken: string = res.data.accessToken;
+        const payload = decodePayload(accessToken);
+        localStorage.setItem('smartlogi_tenant_slug', slug);
+        login(accessToken, {
+          fullName:
+            res.data?.user?.fullName ||
+            (payload.fullName as string) ||
+            (payload.email as string) ||
+            email.trim(),
+          email: (payload.email as string) || email.trim(),
+          role:
+            res.data?.user?.role ||
+            (res.data.role as string) ||
+            (payload.role as string) ||
+            'WAREHOUSE_STAFF',
+          staffId: (payload.sub as string) || (payload.staffId as string) || '',
+          stationId: (payload.stationId as string) || '',
+          slug,
+        });
+        router.push('/pack');
       } catch (err: any) {
-        setError(err.message);
+        const message = err?.response?.data?.message || err?.message || 'Đăng nhập thất bại.';
+        setError(String(message));
       } finally {
         setLoading(false);
       }
-      return;
-    }
+    },
+    [email, password, tenantSlug, performMockLogin, login, router],
+  );
 
-    const slug = tenantSlug.trim();
-    if (!slug) {
-      setError('Vui lòng nhập mã doanh nghiệp (Tenant Slug).');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const res = await api.post(
-        '/tenant/auth/login',
-        { email: email.trim(), password },
-        {
-          headers: {
-            'x-tenant-slug': slug,
-            'x-portal': 'pack-station',
-          },
-        },
-      );
-      const accessToken: string = res.data.accessToken;
-      const payload = decodePayload(accessToken);
-      localStorage.setItem('smartlogi_tenant_slug', slug);
-      login(accessToken, {
-        fullName: (payload.fullName as string) || (payload.email as string) || email.trim(),
-        email: (payload.email as string) || email.trim(),
-        role: (res.data.role as string) || (payload.role as string) || 'WAREHOUSE_STAFF',
-        staffId: (payload.sub as string) || (payload.staffId as string) || '',
-        stationId: (payload.stationId as string) || '',
-        slug,
-      });
-      router.push('/pack');
-    } catch (err: any) {
-      const message = err?.response?.data?.message || err?.message || 'Đăng nhập thất bại.';
-      setError(String(message));
-    } finally {
-      setLoading(false);
-    }
-  }, [email, password, tenantSlug, performMockLogin, login, router]);
+  const handleCloudPersonaLogin = useCallback(
+    async (p: DemoPersona) => {
+      setError('');
+      setLoading(true);
+      try {
+        const sandboxKey =
+          (typeof window !== 'undefined' &&
+            window.localStorage.getItem('smartlogi_sandbox_key')) ||
+          'shared-demo';
+        const res = await api.post('/demo/login', {
+          personaKey: p.key,
+          portal: 'pack',
+          sandboxKey,
+        });
+        const token = res.data?.token || res.data?.accessToken;
+        if (!token) {
+          setError(res.data?.message || 'Không khởi tạo được phiên demo.');
+          return;
+        }
+        if (typeof window !== 'undefined' && p.tenantSlug !== 'platform') {
+          window.localStorage.setItem('smartlogi_tenant_slug', p.tenantSlug);
+        }
+        login(token, {
+          ...(res.data?.user || {}),
+          slug: p.tenantSlug,
+          staffId: res.data?.user?.id || '',
+          stationId: p.tenantSlug === 'demo-fdi-bh' ? 'PACK-FDI-01' : 'PACK-DN-01',
+        });
+        router.push('/pack');
+      } catch (err: any) {
+        setError(err?.response?.data?.message || 'Đăng nhập demo thất bại.');
+      } finally {
+        setLoading(false);
+      }
+    },
+    [login, router],
+  );
 
   const handleDemoLogin = useCallback(() => {
     if (!isMockDataSource) return;
@@ -170,21 +221,56 @@ export default function PackStationLogin() {
         <div className="self-center space-y-6">
           <EditorialPageHeader
             title="Đăng nhập trạm đóng gói"
-            description="Đăng nhập để đóng gói, quét mã barcode/SKU và ghi nhận kiện hàng theo ca làm việc."
+            description="Vận hành bàn đóng gói với quét mã vạch, Camera CV mô phỏng, cân điện tử và niêm phong đồng bộ tồn kho Postgres RLS."
           />
           {isMockDataSource ? (
             <EmptyNote>
               Tài khoản demo offline: email `pack@smartlogi.vn`, mật khẩu bất kỳ.
             </EmptyNote>
+          ) : isDemoMode ? (
+            <EmptyNote>
+              Cloud Demo Mode active. Chọn nhanh nhân sự đóng gói tại Kho ICD Long Bình
+              (`demo-3pl-dn`) hoặc Kho ngoại quan FDI Biên Hòa (`demo-fdi-bh`).
+            </EmptyNote>
           ) : (
             <EmptyNote>
-              Kết nối trực tiếp WMS backend (`x-portal: pack-station`). Chỉ vai trò `WAREHOUSE_STAFF`, `WAREHOUSE_MANAGER` hoặc `TENANT_ADMIN` được phép truy cập.
+              Kết nối trực tiếp WMS backend. Chỉ vai trò `WAREHOUSE_STAFF`, `WAREHOUSE_MANAGER` hoặc
+              `TENANT_ADMIN` được phép truy cập.
             </EmptyNote>
           )}
+
+          {!isMockDataSource && isDemoMode && personas.length > 0 ? (
+            <div className="space-y-2 rounded-lg border border-line bg-surface p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+                Nhân sự Trạm đóng gói Demo 1 chạm
+              </p>
+              <div className="grid gap-2">
+                {personas.map((p) => (
+                  <button
+                    key={p.key}
+                    type="button"
+                    disabled={loading}
+                    onClick={() => handleCloudPersonaLogin(p)}
+                    className="flex items-center justify-between gap-3 rounded-md border border-line bg-surface-alt px-3 py-2 text-left transition-colors hover:border-accent disabled:opacity-50"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-[12px] font-semibold text-ink">{p.title}</p>
+                      <p className="truncate font-mono text-[11px] text-ink-soft">
+                        {p.tenantSlug} · {p.role}
+                      </p>
+                    </div>
+                    <span className="shrink-0 rounded bg-accent px-2.5 py-1 text-[11px] font-semibold text-white">
+                      Vào trạm
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </div>
 
         <div className="self-center">
-          <form onSubmit={handleSubmit} className="space-y-5">
+          <form onSubmit={handleSubmit} className="space-y-5 rounded-lg border border-line bg-surface p-6">
             {!isMockDataSource ? (
               <Input
                 id="pack-tenant-slug"
@@ -201,7 +287,7 @@ export default function PackStationLogin() {
               id="pack-email"
               type="email"
               label="Email nhân viên"
-              placeholder={isMockDataSource ? 'pack@smartlogi.vn' : 'packer@company.vn'}
+              placeholder={isMockDataSource ? 'pack@smartlogi.vn' : 'pack.staff@3pl-dn.demo'}
               required
               value={email}
               onChange={(event) => setEmail(event.target.value)}
@@ -227,7 +313,7 @@ export default function PackStationLogin() {
             <Button
               type="submit"
               variant="primary"
-              className="h-11 w-full text-[13px] font-semibold rounded-lg"
+              className="h-11 w-full rounded-lg text-[13px] font-semibold"
               disabled={loading}
             >
               {loading ? 'Đang đăng nhập…' : 'Đăng nhập'}
@@ -237,15 +323,22 @@ export default function PackStationLogin() {
               <Button
                 type="button"
                 variant="secondary"
-                className="h-11 w-full text-[13px] font-semibold rounded-lg"
+                className="h-11 w-full rounded-lg text-[13px] font-semibold"
                 onClick={handleDemoLogin}
               >
                 Vào bằng tài khoản thử nghiệm
               </Button>
             ) : null}
+
+            <div className="flex justify-end text-[12px] text-ink-soft">
+              <Link href="/build-info" className="hover:text-accent">
+                /build-info
+              </Link>
+            </div>
           </form>
         </div>
       </div>
+      {isDemoMode ? <DemoControlCenter variant="floating" portalOverride="pack" /> : null}
     </div>
   );
 }

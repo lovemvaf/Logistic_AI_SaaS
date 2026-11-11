@@ -29,6 +29,9 @@ export default function AIModelsPage() {
   const [error, setError] = useState<string | null>(null);
   const [datasetNotice, setDatasetNotice] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [simModelType, setSimModelType] = useState('demand');
+  const [simBusy, setSimBusy] = useState(false);
+  const [simResult, setSimResult] = useState<any | null>(null);
 
   const fetchModels = async () => {
     setLoading(true);
@@ -127,6 +130,19 @@ export default function AIModelsPage() {
       }
     } catch (err: any) {
       showToast(err?.response?.data?.message || 'Failed to remove model.', 'error');
+    }
+  };
+
+  const handleSimRetrain = async () => {
+    setSimBusy(true);
+    try {
+      const res = await api.post('/demo/ai-sim/retrain', { modelType: simModelType });
+      setSimResult(res.data);
+      showToast('Simulation dry-run completed (MODEL NOT TRAINED — /ai/v1/train stays 501).', 'info');
+    } catch (err: any) {
+      showToast(err?.response?.data?.message || 'Simulation dry-run failed.', 'error');
+    } finally {
+      setSimBusy(false);
     }
   };
 
@@ -263,6 +279,65 @@ export default function AIModelsPage() {
           </table>
         </div>
       </EditorialSection>
+
+      {!isMockDataSource ? (
+        <EditorialSection
+          eyebrow="Demo Boundary"
+          title="Simulation: Retraining Workflow (SIMULATION ONLY, MODEL NOT TRAINED)"
+        >
+          <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50/40 p-4 text-[12px]">
+            <p className="text-ink-soft">
+              Production endpoint <code className="font-mono">POST /api/v1/ai/v1/train/:type</code>{' '}
+              strictly returns <strong className="text-ink">HTTP 501 TRAINING_NOT_IMPLEMENTED</strong>{' '}
+              because online GPU training is not enabled. Use this dry-run simulator to inspect
+              dataset extraction and feature validation honestly without claiming trained weights.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={simModelType}
+                onChange={(e) => setSimModelType(e.target.value)}
+                className="h-9 rounded-md border border-line bg-surface px-3 text-[12px] text-ink"
+              >
+                <option value="demand">demand (Dong Nai demand heuristic)</option>
+                <option value="eta">eta (Corridor travel ETA)</option>
+                <option value="anomaly">anomaly (COD &amp; packing variance)</option>
+              </select>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={simBusy}
+                onClick={() => void handleSimRetrain()}
+              >
+                {simBusy ? 'Running Simulation...' : 'Run Simulation Dry-Run'}
+              </Button>
+            </div>
+            {simResult ? (
+              <div className="space-y-2 rounded-md border border-line bg-surface p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <StatusLabel tone="warning">{simResult.statusLabel}</StatusLabel>
+                  <span className="font-mono text-[11px] text-ink-faint">
+                    Eligible feedback samples: {simResult.eligibleFeedbackSamples}
+                  </span>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  {Array.isArray(simResult.stages) &&
+                    simResult.stages.map((st: any) => (
+                      <div key={st.stage} className="rounded border border-line bg-surface-alt p-2.5">
+                        <p className="font-medium text-ink">{st.stage}</p>
+                        <p className="mt-1 font-mono text-[10px] font-semibold text-accent">
+                          {st.status}
+                        </p>
+                        <p className="mt-0.5 text-[11px] text-ink-soft">{st.detail}</p>
+                      </div>
+                    ))}
+                </div>
+                <p className="text-[11px] text-ink-faint">{simResult.note}</p>
+              </div>
+            ) : null}
+          </div>
+        </EditorialSection>
+      ) : null}
     </div>
   );
 }

@@ -1,5 +1,6 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
@@ -2485,4 +2486,59 @@ model HSCodeSuggestion {
   @@index([tenantId, status])
   @@index([declarationId])
   @@map("hs_code_suggestions")
+}
+
+/// Platform-layer Demo Control Plane: stateful sandboxes, single-use cross-portal handoff tokens, and deterministic simulation ledger.
+model DemoSandbox {
+  id              String   @id @default(uuid())
+  sandboxKey      String   @unique @map("sandbox_key")
+  tenantId        String   @map("tenant_id")
+  tenantSlug      String   @map("tenant_slug")
+  activeScenario  String   @default("NORMAL_DAY") @map("active_scenario")
+  scenarioStatus  String   @default("ACTIVE") @map("scenario_status") // ACTIVE | PAUSED | COMPLETED
+  simSpeed        Float    @default(1) @map("sim_speed")
+  telemetryPaused Boolean  @default(false) @map("telemetry_paused")
+  networkSimMode  String   @default("NORMAL") @map("network_sim_mode") // NORMAL | TIMEOUT | RATE_LIMIT_429 | SERVER_500 | OFFLINE
+  stateJson       Json     @default("{}") @map("state_json")
+  expiresAt       DateTime @map("expires_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId])
+  @@index([expiresAt])
+  @@map("demo_sandboxes")
+}
+
+model DemoHandoffToken {
+  id         String    @id @default(uuid())
+  tokenHash  String    @unique @map("token_hash")
+  personaId  String    @map("persona_id")
+  sandboxKey String    @map("sandbox_key")
+  tenantId   String    @map("tenant_id")
+  tenantSlug String    @map("tenant_slug")
+  role       String
+  portal     String
+  userEmail  String    @map("user_email")
+  usedAt     DateTime? @map("used_at")
+  expiresAt  DateTime  @map("expires_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@index([expiresAt])
+  @@index([sandboxKey])
+  @@map("demo_handoff_tokens")
+}
+
+model DemoSimulationEvent {
+  id          String   @id @default(uuid())
+  sandboxKey  String   @map("sandbox_key")
+  tenantId    String?  @map("tenant_id")
+  category    String   // SCENARIO | GPS | PACK | DRIVER | FREIGHT | TRADE | BILLING | RETRAIN_SIM
+  eventType   String   @map("event_type")
+  summary     String
+  payloadJson Json     @default("{}") @map("payload_json")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([sandboxKey, createdAt])
+  @@index([tenantId])
+  @@map("demo_simulation_events")
 }

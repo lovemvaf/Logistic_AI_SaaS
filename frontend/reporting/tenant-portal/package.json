@@ -6,7 +6,7 @@
     "dev": "next dev -p 4002",
     "build": "next build",
     "start": "next start -p 4002",
-    "vercel-build": "pnpm --filter ui-components build && pnpm --filter ui-kit build && pnpm --filter hardware-bridge build && pnpm --filter map-components build && next build",
+    "vercel-build": "pnpm --filter shared-types build && pnpm --filter prisma-schemas exec prisma generate && pnpm --filter demo-cloud-api build && pnpm --filter ui-components build && pnpm --filter ui-kit build && pnpm --filter hardware-bridge build && pnpm --filter map-components build && next build",
     "lint": "next lint"
   },
   "dependencies": {
@@ -15,6 +15,7 @@
     "autoprefixer": "^10.4.20",
     "axios": "^1.16.1",
     "clsx": "^2.1.1",
+    "demo-cloud-api": "workspace:*",
     "next": "15.5.28",
     "postcss": "8.4.39",
     "react": "19.0.0",

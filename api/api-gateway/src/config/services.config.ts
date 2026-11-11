@@ -167,6 +167,9 @@ export const ROUTE_RULES: RouteRule[] = [
   // --- Notifications ---
   { prefix: '/api/v1/notifications', service: 'core-api' },
 
+  // --- Cloud Demo Control Plane ---
+  { prefix: '/api/v1/demo', service: 'core-api' },
+
   // --- Health ---
   { prefix: '/api/v1/health', service: 'core-api' },
 ];
@@ -206,6 +209,15 @@ export const PUBLIC_PATHS = [
   '/api/v1/admin/auth',
   '/api/v1/client/auth',
   '/api/v1/mobile/auth',
+  // Demo Control Plane (handles own optional session cookie & single-use handoff verification).
+  '/api/v1/demo/health',
+  '/api/v1/demo/personas',
+  '/api/v1/demo/login',
+  '/api/v1/demo/logout',
+  '/api/v1/demo/me',
+  '/api/v1/demo/handoff/exchange',
+  '/api/v1/demo/scenarios',
+  '/api/v1/demo/events',
 ];
 
 /**

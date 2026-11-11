@@ -57,7 +57,7 @@ const MATRIX: Record<AppRole, PermissionAction[]> = {
     'expense:write',
     'return:write',
   ],
-  DRIVER: ['cod:write'],
+  DRIVER: ['cod:write', 'sos:write'],
   CUSTOMER_CLIENT: ['order:write', 'return:write'],
   TENANT_USER: [],
 };
@@ -88,6 +88,7 @@ const ROUTE_ACCESS: Record<AppRole, string[]> = {
     '/orders',
     '/logistics',
     '/drivers',
+    '/driver-sim',
     '/finance/cod',
     '/finance/reports',
     '/finance/freight',
@@ -98,7 +99,7 @@ const ROUTE_ACCESS: Record<AppRole, string[]> = {
     '/yard',
     '/trade',
   ],
-  DRIVER: ['/dashboard', '/notifications', '/profile', '/drivers/my-trips', '/logistics/sos'],
+  DRIVER: ['/dashboard', '/notifications', '/profile', '/drivers/my-trips', '/driver-sim', '/logistics/sos'],
   CUSTOMER_CLIENT: ['/dashboard', '/notifications', '/profile', '/orders'],
   TENANT_USER: [
     '/dashboard',

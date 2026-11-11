@@ -7,10 +7,14 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'smartlogi_app') THEN
     CREATE ROLE smartlogi_app NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS NOREPLICATION;
   END IF;
+  IF current_user <> 'smartlogi_app' THEN
+    EXECUTE format('GRANT smartlogi_app TO %I', current_user);
+  END IF;
 END $$;
 
 GRANT USAGE ON SCHEMA public TO smartlogi_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO smartlogi_app;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO smartlogi_app;
 GRANT EXECUTE ON FUNCTION public.app_current_tenant_id() TO smartlogi_app;
 
 -- 2. Verify FORCE ROW LEVEL SECURITY metadata on hardened + core tenant tables

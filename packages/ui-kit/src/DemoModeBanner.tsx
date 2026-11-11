@@ -1,5 +1,7 @@
 'use client';
 
+import { DemoControlCenter } from './DemoControlCenter';
+
 declare const process: { env: Record<string, string | undefined> };
 
 export function DemoModeBanner({
@@ -23,14 +25,18 @@ export function DemoModeBanner({
       aria-label="Chế độ môi trường demo"
       className={`border-b border-line bg-surface-alt px-4 py-1.5 text-[11px] text-ink-soft sm:px-5 lg:px-6 ${className}`.trim()}
     >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="font-medium text-ink">
-          MÔI TRƯỜNG DEMO TÍCH HỢP · Dữ liệu tổng hợp (Synthetic Demo Data)
-        </span>
-        <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-faint">
-          {isApi ? 'LIVE API + POSTGRES RLS' : 'LOCAL DEMO MODE'}
-        </span>
-      </div>
+      {isApi ? (
+        <DemoControlCenter variant="banner" />
+      ) : (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="font-medium text-ink">
+            MÔI TRƯỜNG DEMO TÍCH HỢP · Dữ liệu tổng hợp (Synthetic Demo Data)
+          </span>
+          <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-faint">
+            LOCAL DEMO MODE
+          </span>
+        </div>
+      )}
     </div>
   );
 }

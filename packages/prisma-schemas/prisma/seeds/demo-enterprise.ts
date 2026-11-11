@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { seedRoles } from './01-roles';
 
-type ActionMode = 'seed' | 'reset' | 'verify';
+type ActionMode = 'seed' | 'reset' | 'verify' | 'bootstrap' | 'reset-session' | 'cleanup-expired' | 'diagnose';
 
 const DEMO_TENANT_IDS = {
   DN3PL: '30000000-0000-4000-8000-000000000001',
@@ -57,10 +57,25 @@ function loadDongNaiCatalog(): {
 function parseAction(): ActionMode {
   const arg = process.argv.find((a) => a.startsWith('--action='));
   const raw = (arg ? arg.split('=')[1] : 'seed').toLowerCase();
-  if (raw === 'seed' || raw === 'reset' || raw === 'verify') {
+  if (
+    raw === 'seed' ||
+    raw === 'reset' ||
+    raw === 'verify' ||
+    raw === 'bootstrap' ||
+    raw === 'reset-session' ||
+    raw === 'cleanup-expired' ||
+    raw === 'diagnose'
+  ) {
     return raw;
   }
-  throw new Error(`Unsupported --action=${raw}. Use seed | reset | verify.`);
+  throw new Error(
+    `Unsupported --action=${raw}. Use seed | reset | verify | bootstrap | reset-session | cleanup-expired | diagnose.`,
+  );
+}
+
+function parseArgValue(prefix: string): string | undefined {
+  const hit = process.argv.find((a) => a.startsWith(prefix));
+  return hit ? hit.slice(prefix.length).trim() : undefined;
 }
 
 function assertSafeEnvironment(action: ActionMode): void {
@@ -98,7 +113,7 @@ function assertSafeEnvironment(action: ActionMode): void {
     throw new Error(`[demo-enterprise] REFUSING to run against database "${dbName}" whose name looks like production.`);
   }
 
-  if ((action === 'seed' || action === 'reset') && process.env.ALLOW_DEMO_SEED !== 'true') {
+  if ((action === 'seed' || action === 'reset' || action === 'bootstrap' || action === 'reset-session' || action === 'cleanup-expired') && process.env.ALLOW_DEMO_SEED !== 'true') {
     throw new Error(
       '[demo-enterprise] ALLOW_DEMO_SEED=true is required to mutate demo data (safety guard against accidental seeding).',
     );
@@ -127,6 +142,17 @@ async function resetDemoData(prisma: PrismaClient): Promise<void> {
       await tx.$executeRawUnsafe(`SELECT set_config('app.bypass_rls', 'on', true)`);
 
       const tenantFilter = { in: ALL_DEMO_TENANT_IDS };
+
+      // 0. Demo Control Plane cleanup for demo tenants
+      await tx.demoSimulationEvent.deleteMany({
+        where: { OR: [{ tenantId: tenantFilter }, { sandboxKey: 'shared-demo' }, { sandboxKey: { startsWith: 'sbx-' } }] },
+      });
+      await tx.demoHandoffToken.deleteMany({
+        where: { OR: [{ tenantId: tenantFilter }, { sandboxKey: 'shared-demo' }, { sandboxKey: { startsWith: 'sbx-' } }] },
+      });
+      await tx.demoSandbox.deleteMany({
+        where: { OR: [{ tenantId: tenantFilter }, { sandboxKey: 'shared-demo' }, { sandboxKey: { startsWith: 'sbx-' } }] },
+      });
 
       // 1. Outbox & webhook deliveries for demo tenants
       await tx.webhookDelivery.deleteMany({
@@ -2543,6 +2569,44 @@ async function seedDemoData(prisma: PrismaClient): Promise<void> {
 
       // Quiet unused variable warning if any
       void t1Dispatch;
+
+      // Initialize default persistent cloud DemoSandbox + initial simulation timeline entry
+      await tx.demoSandbox.upsert({
+        where: { sandboxKey: 'shared-demo' },
+        update: {
+          tenantId: DEMO_TENANT_IDS.DN3PL,
+          tenantSlug: 'demo-3pl-dn',
+          activeScenario: 'NORMAL_DAY',
+          scenarioStatus: 'ACTIVE',
+          simSpeed: 1,
+          telemetryPaused: false,
+          networkSimMode: 'NORMAL',
+          stateJson: { presetTitle: 'Vận hành bình thường tại Đồng Nai', seededOrders: 230, stepCount: 0 },
+          expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
+        },
+        create: {
+          sandboxKey: 'shared-demo',
+          tenantId: DEMO_TENANT_IDS.DN3PL,
+          tenantSlug: 'demo-3pl-dn',
+          activeScenario: 'NORMAL_DAY',
+          scenarioStatus: 'ACTIVE',
+          simSpeed: 1,
+          telemetryPaused: false,
+          networkSimMode: 'NORMAL',
+          stateJson: { presetTitle: 'Vận hành bình thường tại Đồng Nai', seededOrders: 230, stepCount: 0 },
+          expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
+        },
+      });
+      await tx.demoSimulationEvent.create({
+        data: {
+          sandboxKey: 'shared-demo',
+          tenantId: DEMO_TENANT_IDS.DN3PL,
+          category: 'SCENARIO',
+          eventType: 'DEMO_SEED_INITIALIZED',
+          summary: 'Enterprise demo workspace initialized (4 tenants, 230 orders, 95 Dong Nai 2026 units)',
+          payloadJson: { scenario: 'NORMAL_DAY', simulated: true },
+        },
+      });
     },
     { timeout: 120000, maxWait: 15000 },
   );
@@ -2687,6 +2751,97 @@ async function verifyDemoData(prisma: PrismaClient): Promise<void> {
   console.log('✅ All demo enterprise verification assertions PASSED.');
 }
 
+async function resetSessionSandbox(prisma: PrismaClient, sandboxKey: string): Promise<void> {
+  console.log(`--- Resetting Demo Sandbox Session (${sandboxKey}) ---`);
+  await prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe(`SELECT set_config('app.bypass_rls', 'on', true)`);
+    await tx.demoSimulationEvent.deleteMany({ where: { sandboxKey } });
+    await tx.demoHandoffToken.deleteMany({ where: { sandboxKey } });
+    await tx.demoSandbox.upsert({
+      where: { sandboxKey },
+      update: {
+        activeScenario: 'NORMAL_DAY',
+        scenarioStatus: 'ACTIVE',
+        simSpeed: 1,
+        telemetryPaused: false,
+        networkSimMode: 'NORMAL',
+        stateJson: { resetAt: new Date().toISOString(), stepCount: 0 },
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      },
+      create: {
+        sandboxKey,
+        tenantId: DEMO_TENANT_IDS.DN3PL,
+        tenantSlug: 'demo-3pl-dn',
+        activeScenario: 'NORMAL_DAY',
+        scenarioStatus: 'ACTIVE',
+        simSpeed: 1,
+        telemetryPaused: false,
+        networkSimMode: 'NORMAL',
+        stateJson: { resetAt: new Date().toISOString(), stepCount: 0 },
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      },
+    });
+  });
+  console.log(`✅ Sandbox session '${sandboxKey}' state reset without disturbing other sessions.`);
+}
+
+async function cleanupExpiredDemoArtifacts(prisma: PrismaClient): Promise<void> {
+  console.log('--- Cleaning up Expired Demo Sandboxes, Handoffs & Idempotency Records ---');
+  const now = new Date();
+  const result = await prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe(`SELECT set_config('app.bypass_rls', 'on', true)`);
+    const handoffs = await tx.demoHandoffToken.deleteMany({ where: { expiresAt: { lt: now } } });
+    const sandboxes = await tx.demoSandbox.deleteMany({
+      where: { expiresAt: { lt: now }, NOT: { sandboxKey: 'shared-demo' } },
+    });
+    const grants = await tx.publicTrackingGrant.deleteMany({
+      where: { tenantId: { in: ALL_DEMO_TENANT_IDS }, expiresAt: { lt: now }, tokenHash: { startsWith: 'sim-' } },
+    });
+    const idem = await tx.apiIdempotencyRecord.deleteMany({
+      where: { tenantId: { in: ALL_DEMO_TENANT_IDS }, expiresAt: { lt: now } },
+    });
+    return {
+      handoffsDeleted: handoffs.count,
+      sandboxesDeleted: sandboxes.count,
+      simGrantsDeleted: grants.count,
+      expiredIdemDeleted: idem.count,
+    };
+  });
+  console.log('✅ Cleanup summary:', result);
+}
+
+async function diagnoseDemoEnvironment(prisma: PrismaClient): Promise<void> {
+  console.log('--- Diagnosing Cloud Database, PostGIS, RLS Role & Demo Seed ---');
+  const rlsStats = await prisma.$queryRawUnsafe<Array<{ total_tables: bigint; rls_tables: bigint; force_rls_tables: bigint }>>(`
+    SELECT
+      count(*) AS total_tables,
+      count(*) FILTER (WHERE c.relrowsecurity) AS rls_tables,
+      count(*) FILTER (WHERE c.relforcerowsecurity) AS force_rls_tables
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relkind = 'r'
+  `);
+  const appRole = await prisma.$queryRawUnsafe<Array<{ rolname: string; rolsuper: boolean; rolbypassrls: boolean }>>(
+    `SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = 'smartlogi_app'`,
+  );
+  const sandboxes = await prisma.demoSandbox.count();
+  const tenants = await prisma.tenant.count({ where: { id: { in: ALL_DEMO_TENANT_IDS } } });
+  const orders = await prisma.order.count({ where: { tenantId: { in: ALL_DEMO_TENANT_IDS } } });
+  console.log('DB Diagnostics:', {
+    tables: rlsStats[0]
+      ? {
+          total: Number(rlsStats[0].total_tables),
+          rlsEnabled: Number(rlsStats[0].rls_tables),
+          forceRls: Number(rlsStats[0].force_rls_tables),
+        }
+      : null,
+    smartlogiAppRole: appRole[0] || null,
+    demoTenants: tenants,
+    demoOrders: orders,
+    demoSandboxes: sandboxes,
+  });
+}
+
 async function main(): Promise<void> {
   const action = parseAction();
   assertSafeEnvironment(action);
@@ -2699,6 +2854,17 @@ async function main(): Promise<void> {
       await seedDemoData(prisma);
     } else if (action === 'verify') {
       await verifyDemoData(prisma);
+    } else if (action === 'bootstrap') {
+      await resetDemoData(prisma);
+      await seedDemoData(prisma);
+      await verifyDemoData(prisma);
+    } else if (action === 'reset-session') {
+      const sandboxKey = parseArgValue('--sandbox=') || 'shared-demo';
+      await resetSessionSandbox(prisma, sandboxKey);
+    } else if (action === 'cleanup-expired') {
+      await cleanupExpiredDemoArtifacts(prisma);
+    } else if (action === 'diagnose') {
+      await diagnoseDemoEnvironment(prisma);
     }
   } finally {
     await prisma.$disconnect();

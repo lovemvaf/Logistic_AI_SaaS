@@ -79,11 +79,15 @@ function CustomerChrome({ children }: { children: React.ReactNode }) {
 export default function ClientLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { token, isLoading } = useAuth();
-  const isAuthenticated = !!token;
-  const isPublicRoute = ['/client/login', '/client/forgot-password', '/client/reset-password'].some(
-    (route) => pathname === route || pathname.startsWith(route + '/'),
-  );
+  const { isAuthenticated, isLoading } = useAuth();
+  const isPublicRoute = [
+    '/client/login',
+    '/client/forgot-password',
+    '/client/reset-password',
+    '/client/demo-handoff',
+    '/demo-handoff',
+    '/build-info',
+  ].some((route) => pathname === route || pathname.startsWith(route + '/'));
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated && !isPublicRoute) {

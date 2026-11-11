@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { Button, TableState } from 'ui-components';
+import { Button, Modal, TableState } from 'ui-components';
 import {
   EditorialPageHeader,
   EditorialSection,
@@ -47,6 +47,8 @@ export default function OrdersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [pendingCancelOrder, setPendingCancelOrder] = useState<Order | null>(null);
+  const [cancelling, setCancelling] = useState(false);
 
   const fetchOrders = async () => {
     setLoading(true);
@@ -87,23 +89,34 @@ export default function OrdersPage() {
     }
   };
 
-  const handleCancelOrRemove = async (order: Order) => {
+  const handleCancelOrRemove = (order: Order) => {
     setActionError(null);
-    if (isMockDataSource) {
-      if (!window.confirm(`Remove order ${order.trackingCode}?`)) return;
-      if (remove('orders', order.id)) {
-        setOrders((prev) => prev.filter((o) => o.id !== order.id));
-      }
-      return;
-    }
+    setPendingCancelOrder(order);
+  };
 
-    if (!window.confirm(`Cancel order ${order.trackingCode}?`)) return;
+  const confirmCancelOrRemove = async () => {
+    if (!pendingCancelOrder) return;
+    const order = pendingCancelOrder;
+    setActionError(null);
+    setCancelling(true);
     try {
+      if (isMockDataSource) {
+        if (remove('orders', order.id)) {
+          setOrders((prev) => prev.filter((o) => o.id !== order.id));
+        }
+        setPendingCancelOrder(null);
+        return;
+      }
+
       const endpoint = isClientRole ? `/client/orders/${order.id}/cancel` : `/orders/${order.id}/cancel`;
       await api.post(endpoint);
       setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, status: 'CANCELLED' } : o)));
+      setPendingCancelOrder(null);
     } catch (err: any) {
       setActionError(err?.response?.data?.message || err?.message || `Failed to cancel order ${order.trackingCode}.`);
+      setPendingCancelOrder(null);
+    } finally {
+      setCancelling(false);
     }
   };
 
@@ -230,6 +243,41 @@ export default function OrdersPage() {
           </table>
         </div>
       </EditorialSection>
+
+      <Modal
+        isOpen={Boolean(pendingCancelOrder)}
+        onClose={() => !cancelling && setPendingCancelOrder(null)}
+        title={isMockDataSource ? 'Remove order' : 'Cancel order'}
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-[13px] text-ink-soft">
+            {isMockDataSource ? 'Remove order ' : 'Confirm cancelling order '}
+            <span className="font-mono font-semibold text-ink">
+              {pendingCancelOrder?.trackingCode || pendingCancelOrder?.id}
+            </span>
+            ?
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={cancelling}
+              onClick={() => setPendingCancelOrder(null)}
+            >
+              Keep order
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              disabled={cancelling}
+              onClick={() => void confirmCancelOrRemove()}
+            >
+              {cancelling ? 'Processing...' : isMockDataSource ? 'Remove' : 'Confirm cancel'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

@@ -25,6 +25,7 @@ const SECTIONS: NavSection[] = [
     items: [
       { label: 'Điều phối', href: '/logistics/dispatch' },
       { label: 'Tài xế', href: '/drivers' },
+      { label: 'Mô phỏng Tài xế', href: '/driver-sim' },
       { label: 'Phương tiện', href: '/logistics/vehicles' },
       { label: 'Geofence', href: '/logistics/geofences' },
       { label: 'Cảnh báo SOS', href: '/logistics/sos' },
@@ -85,7 +86,10 @@ export default function Sidebar() {
       return [
         {
           title: 'Ca của tôi',
-          items: [{ label: 'Chuyến của tôi', href: '/drivers/my-trips' }],
+          items: [
+            { label: 'Chuyến của tôi', href: '/drivers/my-trips' },
+            { label: 'Mô phỏng Tài xế', href: '/driver-sim' },
+          ],
         },
         ...filtered,
       ];

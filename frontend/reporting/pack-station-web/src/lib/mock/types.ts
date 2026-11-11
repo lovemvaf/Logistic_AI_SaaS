@@ -44,6 +44,7 @@ export type PackOrder = {
   expectedSku: string;
   expectedQuantity: number;
   estimatedWeight: number;
+  expectedWeightGrams?: number;
   boxType: BoxType;
   status: PackOrderStatus;
   priority: ServicePriority;
@@ -64,6 +65,10 @@ export type PackOrder = {
   estimatedWeightKg?: number;
   /** Giá trị nếu AI có thể dự đoán được mã SKU. */
   aiPrediction?: AiPrediction;
+  /** Cảnh báo chênh lệch trọng lượng khi đóng kiện (nếu vượt ngưỡng cho phép). */
+  weightWarning?: string;
+  weightGrams?: number;
+  dimensionCm?: string;
   /** Các lượt quét đã thực hiện trên đơn này. */
   scanLogs?: ScanLog[];
 };
@@ -188,6 +193,8 @@ export type SealInput = {
   scannedSku: string;
   scannedAt: IsoDate;
   stationId?: string;
+  weightGrams?: number;
+  dimensionCm?: string;
 };
 
 export type SessionStartInput = {
