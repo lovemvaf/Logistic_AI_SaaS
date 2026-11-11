@@ -72,6 +72,7 @@ const recipientOf = (i: number) => {
     '22 Nguyễn Công Trứ, Quận 1, TP Hồ Chí Minh',
   ];
   const name = names[i];
+  const address = addresses[i];
   return { name, address, phone: `0900${(1000 + i * 111).toString().padStart(6, '0')}` };
 };
 
