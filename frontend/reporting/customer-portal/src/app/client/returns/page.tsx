@@ -164,7 +164,6 @@ export default function ClientReturns() {
           colSpan={6}
           emptyTitle="Chưa có yêu cầu"
           emptyDescription="Yêu cầu trả hàng từ các đơn đã giao sẽ hiển thị ở đây."
-          retryLabel="Thử lại"
           onRetry={fetchReturns}
         >
           <div className="overflow-x-auto">

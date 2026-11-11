@@ -194,7 +194,6 @@ export default function ClientWebhooks() {
           colSpan={5}
           emptyTitle="Chưa có webhook"
           emptyDescription="URL nhận thông báo sẽ hiển thị dưới đây."
-          retryLabel="Thử lại"
           onRetry={fetchWebhooks}
         >
           <div className="overflow-x-auto">

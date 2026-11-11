@@ -16,7 +16,7 @@ import {
   listSummary,
 } from '@/lib/labels';
 
-/** Tồn ký gửi theo SKU, kho, hạn sử dụng. Cảnh báo dưới điểm đặt lại."""
+/** Tồn ký gửi theo SKU, kho, hạn sử dụng. Cảnh báo dưới điểm đặt lại. */
 
 type WarehouseOption = { value: string; label: string };
 
@@ -151,7 +151,6 @@ export default function ClientInventory() {
           colSpan={8}
           emptyTitle="Chưa có tồn kho"
           emptyDescription="Dữ liệu tồn của công ty sẽ hiển thị ở đây."
-          retryLabel="Thử lại"
           onRetry={fetchStock}
         >
           <div className="overflow-x-auto">

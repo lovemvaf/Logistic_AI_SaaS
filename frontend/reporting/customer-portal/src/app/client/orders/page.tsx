@@ -179,7 +179,6 @@ export default function ClientOrdersPage() {
           colSpan={6}
           emptyTitle="Chưa có đơn hàng"
           emptyDescription="Dữ liệu sẽ hiển thị sau khi tải."
-          retryLabel="Thử lại"
           onRetry={fetchOrders}
         >
           <table className="w-full border-collapse text-left">
@@ -215,7 +214,7 @@ export default function ClientOrdersPage() {
                   <td className="px-3 text-[12px] text-ink-soft">{row.recipientName}</td>
                   <td className="px-3 text-[12px] text-ink-soft">{serviceLabel(row.service)}</td>
                   <td className="px-3">
-                    <StatusLabel tone={orderStatusTone(row.status as StatusTone)}>
+                    <StatusLabel tone={orderStatusTone(row.status)}>
                       {orderStatusLabel(row.status)}
                     </StatusLabel>
                   </td>

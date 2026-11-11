@@ -26,6 +26,7 @@ import type {
   PackProduct,
   PackScanLog,
   PackSession,
+  PackSessionStatus,
   PackStation,
   PackStaff,
   ScanInput,

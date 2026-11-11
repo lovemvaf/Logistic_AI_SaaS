@@ -13,6 +13,7 @@ import type {
   PackSession,
   PackStation,
   PackStaff,
+  ScanLog,
 } from './types';
 
 export type { PackOrder, PackProduct, PackSession, PackStation, PackStaff, CorrectionLog };

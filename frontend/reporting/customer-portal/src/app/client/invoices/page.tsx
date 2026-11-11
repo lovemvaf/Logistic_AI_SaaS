@@ -169,7 +169,6 @@ export default function ClientInvoices() {
           colSpan={6}
           emptyTitle="Chưa có hóa đơn"
           emptyDescription="Dữ liệu sẽ hiển thị sau khi đăng nhập."
-          retryLabel="Thử lại"
           onRetry={fetchInvoices}
         >
           <div className="overflow-x-auto">

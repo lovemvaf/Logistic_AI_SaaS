@@ -16,7 +16,7 @@ export const dataSource: 'mock' | 'api' =
 export const isMockDataSource = dataSource === 'mock';
 
 const request: RequestFn = async (method, path, body) => {
-  const isReadOrDelete = method === 'GET' || method === 'DELETE' || method === 'HEAD';
+  const isReadOrDelete = method === 'GET' || method === 'DELETE';
   const response = await api.request({
     method,
     url: path,

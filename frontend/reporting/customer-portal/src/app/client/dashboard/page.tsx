@@ -133,7 +133,6 @@ export default function ClientDashboard() {
               colSpan={4}
               emptyTitle="Chưa có đơn hàng"
               emptyDescription="Dữ liệu sẽ hiển thị sau khi đăng nhập."
-              retryLabel="Thử lại"
               onRetry={fetchDashboard}
             >
               {recentOrders.map((row) => (
@@ -144,7 +143,7 @@ export default function ClientDashboard() {
                   <td className="px-3 text-[12px] text-ink-soft">{row.recipientName}</td>
                   <td className="px-3 text-[12px] text-ink-soft">{formatCurrency(row.shippingFee)}</td>
                   <td className="pl-3">
-                    <StatusLabel tone={orderStatusTone(row.status as StatusTone)}>
+                    <StatusLabel tone={orderStatusTone(row.status)}>
                       {row.status}
                     </StatusLabel>
                   </td>
@@ -160,7 +159,6 @@ export default function ClientDashboard() {
                 empty={false}
                 error={error || undefined}
                 colSpan={3}
-                retryLabel="Thử lại"
                 onRetry={fetchDashboard}
               >
                 {overdueInvoices.map((row) => (

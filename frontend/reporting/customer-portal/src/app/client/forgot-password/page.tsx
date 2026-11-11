@@ -39,7 +39,7 @@ export default function ClientForgotPassword() {
 
   if (sent) {
     return (
-      <EditorialSection>
+      <EditorialSection title="Xác nhận gửi email">
         <div className="space-y-4">
           <EditorialPageHeader
             title="Đã gửi email"
@@ -67,7 +67,7 @@ export default function ClientForgotPassword() {
   }
 
   return (
-    <EditorialSection>
+    <EditorialSection title="Khôi phục mật khẩu">
       <div className="space-y-4">
         <EditorialPageHeader
           title="Đặt lại mật khẩu"

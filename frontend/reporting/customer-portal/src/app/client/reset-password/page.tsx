@@ -52,7 +52,7 @@ function ResetPasswordForm() {
   };
 
   return (
-    <EditorialSection>
+    <EditorialSection title="Cập nhật mật khẩu">
       <div className="space-y-4">
         {success ? (
           <EditorialPageHeader
@@ -124,7 +124,7 @@ export default function ClientResetPassword() {
 
   if (!token || !email) {
     return (
-      <EditorialSection>
+      <EditorialSection title="Liên kết đặt lại">
         <div className="space-y-4">
           <EditorialPageHeader title="Liên kết không hợp lệ" description="Liên kết đặt lại mật khẩu này đã hết hạn hoặc không hợp lệ." />
           <div>
