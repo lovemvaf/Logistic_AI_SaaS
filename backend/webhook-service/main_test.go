@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -14,19 +15,30 @@ import (
 	"time"
 )
 
+func clearProcessedMap() {
+	processed.Range(func(k, _ interface{}) bool {
+		processed.Delete(k)
+		return true
+	})
+}
+
 func setupTest() {
-	processed = sync.Map{}
+	deliveryWG.Wait()
+	clearProcessedMap()
 	redisClient = nil
 	dbPool = nil
 	webhookAuthToken = "test-token"
 	webhookURLValidator = validateWebhookURL
 	urlLookupIP = net.LookupIP
+	webhookDialContext = safeDialContext
+	dispatchWebhookHook = dispatchWebhook
 }
 
 func setupLocalServerTest() {
 	setupTest()
 	// Allow httptest loopback HTTP server ONLY inside delivery retry/HMAC tests
 	webhookURLValidator = func(string) error { return nil }
+	webhookDialContext = (&net.Dialer{Timeout: 5 * time.Second}).DialContext
 }
 
 func TestValidateWebhookURL_SSRFProtection(t *testing.T) {
@@ -256,8 +268,14 @@ func TestHealthEndpoint(t *testing.T) {
 
 func TestDeliverEndpoint_SSRFAndAuth(t *testing.T) {
 	setupTest()
+	defer setupTest()
+
 	urlLookupIP = func(host string) ([]net.IP, error) {
 		return []net.IP{net.ParseIP("93.184.216.34")}, nil
+	}
+	var queued []DeliveryRequest
+	dispatchWebhookHook = func(req DeliveryRequest) {
+		queued = append(queued, req)
 	}
 	mux := setupRoutes()
 
@@ -275,6 +293,9 @@ func TestDeliverEndpoint_SSRFAndAuth(t *testing.T) {
 	mux.ServeHTTP(wSsrf, ssrfReq)
 	if wSsrf.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 on SSRF URL, got %d", wSsrf.Code)
+	}
+	if len(queued) != 0 {
+		t.Fatalf("expected rejected SSRF request not to be enqueued, got %d", len(queued))
 	}
 
 	safeBody := DeliveryRequest{
@@ -297,5 +318,115 @@ func TestDeliverEndpoint_SSRFAndAuth(t *testing.T) {
 	_ = json.Unmarshal(wSafe.Body.Bytes(), &resp)
 	if resp["ok"] != true {
 		t.Fatalf("expected ok: true")
+	}
+	if len(queued) != 1 || queued[0].Url != "https://webhooks.example.com/orders" {
+		t.Fatalf("expected 1 queued delivery for safe URL, got %+v", queued)
+	}
+}
+
+func TestDispatchWebhook_WaitGroupSynchronized(t *testing.T) {
+	setupLocalServerTest()
+	defer setupTest()
+
+	var hit int
+	var mu sync.Mutex
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		hit++
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	enqueueWebhook(DeliveryRequest{
+		Id:    "async-wg-1",
+		Url:   srv.URL,
+		Event: "order.created",
+		Body:  map[string]interface{}{"ok": true},
+	})
+	deliveryWG.Wait()
+
+	mu.Lock()
+	defer mu.Unlock()
+	if hit != 1 {
+		t.Fatalf("expected async delivery to complete once before WaitGroup returns, got %d", hit)
+	}
+}
+
+func TestSafeDialContext_BlocksDNSRebindAndRestrictedPorts(t *testing.T) {
+	setupTest()
+	defer setupTest()
+
+	// Simulate DNS rebinding: hostname resolves to loopback or cloud metadata at dial time
+	urlLookupIP = func(host string) ([]net.IP, error) {
+		switch host {
+		case "rebind-loopback.example.com":
+			return []net.IP{net.ParseIP("127.0.0.1")}, nil
+		case "rebind-metadata.example.com":
+			return []net.IP{net.ParseIP("169.254.169.254")}, nil
+		default:
+			return []net.IP{net.ParseIP("93.184.216.34")}, nil
+		}
+	}
+
+	if _, err := safeDialContext(context.Background(), "tcp", "rebind-loopback.example.com:443"); err == nil {
+		t.Fatalf("expected safeDialContext to reject DNS rebinding to loopback IP")
+	}
+	if _, err := safeDialContext(context.Background(), "tcp", "rebind-metadata.example.com:443"); err == nil {
+		t.Fatalf("expected safeDialContext to reject DNS rebinding to metadata IP")
+	}
+	if _, err := safeDialContext(context.Background(), "tcp", "webhooks.example.com:5432"); err == nil {
+		t.Fatalf("expected safeDialContext to block restricted internal DB port 5432")
+	}
+}
+
+func TestDeliverWebhook_SLGReplaySignatureAndDeliveriesAuth(t *testing.T) {
+	setupLocalServerTest()
+	defer setupTest()
+
+	var slgSig, slgTs, slgDeliveryId string
+	secret := "slg-secret-key"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		slgSig = r.Header.Get("X-SLG-Signature")
+		slgTs = r.Header.Get("X-SLG-Timestamp")
+		slgDeliveryId = r.Header.Get("X-SLG-Delivery-Id")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	req := DeliveryRequest{
+		DeliveryId:  "deliv-slg-1",
+		WebhookId:   "wh-1",
+		Url:         srv.URL,
+		Event:       "freight.booking.confirmed",
+		SecretToken: secret,
+		Body:        map[string]interface{}{"booking": "BK-001"},
+	}
+	deliverWebhook(req)
+
+	payload, _ := json.Marshal(req.Body)
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(slgTs + "." + slgDeliveryId + "." + string(payload)))
+	expected := "sha256=" + hex.EncodeToString(mac.Sum(nil))
+	if slgSig != expected {
+		t.Fatalf("expected X-SLG-Signature %s, got %s", expected, slgSig)
+	}
+
+	// Verify /deliveries rejects missing tenantId even when authenticated
+	mux := setupRoutes()
+	delivReq, _ := http.NewRequest("GET", "/deliveries", nil)
+	delivReq.Header.Set("Authorization", "Bearer test-token")
+	wDeliv := httptest.NewRecorder()
+	mux.ServeHTTP(wDeliv, delivReq)
+	if wDeliv.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 when tenantId missing on /deliveries, got %d", wDeliv.Code)
+	}
+
+	delivScopedReq, _ := http.NewRequest("GET", "/deliveries?tenantId=t-1", nil)
+	delivScopedReq.Header.Set("Authorization", "Bearer test-token")
+	wScoped := httptest.NewRecorder()
+	mux.ServeHTTP(wScoped, delivScopedReq)
+	if wScoped.Code != http.StatusOK {
+		t.Fatalf("expected 200 on tenant-scoped /deliveries when DB pool nil, got %d", wScoped.Code)
 	}
 }

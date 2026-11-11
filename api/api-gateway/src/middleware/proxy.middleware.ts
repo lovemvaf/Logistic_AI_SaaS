@@ -98,6 +98,12 @@ export class ProxyMiddleware implements NestMiddleware {
       if (key.toLowerCase() === 'x-tenant-id') continue;
       headers[key] = Array.isArray(value) ? value.join(', ') : String(value);
     }
+    const clientIp = req.ip || req.socket?.remoteAddress;
+    if (clientIp) {
+      headers['x-forwarded-for'] = headers['x-forwarded-for']
+        ? `${headers['x-forwarded-for']}, ${clientIp}`
+        : String(clientIp);
+    }
     const verifiedTenantId = (req as any).user?.tenant_id || (req as any).apiKeyTenantId;
     if (verifiedTenantId) {
       headers['x-tenant-id'] = String(verifiedTenantId);

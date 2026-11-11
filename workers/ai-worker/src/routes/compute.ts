@@ -2,6 +2,7 @@ import type { Hono, Context } from 'hono';
 import type { Bindings, JwtPayload } from '../env';
 import { UNTRUSTED_DATA_GUARD, llmChat, llmChatVision, llmJson, wrapUntrustedData } from '../lib/llm';
 import { solveRouting, Location, Vehicle } from '../lib/vrp';
+import { solveContainerDrayage } from '../lib/container-routing';
 import { latestModelId } from '../lib/db';
 
 type App = Hono<{ Bindings: Bindings; Variables: { user: JwtPayload | null; tenantId: string } }>;
@@ -221,6 +222,13 @@ export function registerComputeRoutes(app: App) {
    */
   app.post('/routing/solve', routingHandler);
   app.post('/v1/routing/solve', routingHandler);
+  app.post('/v1/routing/containers', async (c: Context) => {
+    const b = await c.req.json().catch(() => ({}));
+    const depot = b?.depot || { lat: 10.9465, lng: 106.8428 }; // Bien Hoa ICD baseline
+    const jobs = Array.isArray(b?.jobs) ? b.jobs : [];
+    const tractors = Array.isArray(b?.tractors) ? b.tractors : [];
+    return c.json(solveContainerDrayage(depot, jobs, tractors));
+  });
 
   /* ---- POST /ai/v1/analyze (one-shot payload analysis with safe fallback) ---- */
   app.post('/v1/analyze', async (c: Context) => {

@@ -22,6 +22,16 @@
       "import": "./dist/AppShell.js",
       "default": "./dist/AppShell.js"
     },
+    "./DemoModeBanner": {
+      "types": "./dist/DemoModeBanner.d.ts",
+      "import": "./dist/DemoModeBanner.js",
+      "default": "./dist/DemoModeBanner.js"
+    },
+    "./DemoControlCenter": {
+      "types": "./dist/DemoControlCenter.d.ts",
+      "import": "./dist/DemoControlCenter.js",
+      "default": "./dist/DemoControlCenter.js"
+    },
     "./Sidebar": {
       "types": "./dist/Sidebar.d.ts",
       "import": "./dist/Sidebar.js",

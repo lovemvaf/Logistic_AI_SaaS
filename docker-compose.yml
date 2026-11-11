@@ -212,6 +212,8 @@ services:
       - UDP_PORT=${UDP_PORT:-8091}
       - DATABASE_URL=postgresql://${APP_DB_USER:-smartlogi_app}:${POSTGRES_PASSWORD:?}@postgres:5432/${POSTGRES_DB:-smartlogi}
       - GPS_AUTH_TOKEN=${GPS_AUTH_TOKEN}
+      - GPS_UDP_HMAC_SECRET=${GPS_UDP_HMAC_SECRET:-}
+      - GPS_UDP_ALLOW_LEGACY_UNAUTHENTICATED=${GPS_UDP_ALLOW_LEGACY_UNAUTHENTICATED:-false}
     ports:
       - "8090:8090"
       - "8091:8091/udp"

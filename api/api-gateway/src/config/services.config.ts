@@ -144,7 +144,12 @@ export const ROUTE_RULES: RouteRule[] = [
     mapPath: (path) => path.replace(/^\/api\/v1\/wms/, '/api/v1'),
   },
 
-  // --- Logistics ---
+  // --- Logistics & Enterprise Freight / Geography / Yard / Trade / Pricing ---
+  { prefix: '/api/v1/geography', service: 'core-api' },
+  { prefix: '/api/v1/freight', service: 'core-api' },
+  { prefix: '/api/v1/yard', service: 'core-api' },
+  { prefix: '/api/v1/trade', service: 'core-api' },
+  { prefix: '/api/v1/pricing', service: 'core-api' },
   { prefix: '/api/v1/logistics', service: 'core-api' },
   { prefix: '/api/v1/finance', service: 'core-api' },
   { prefix: '/api/v1/trips', service: 'core-api' },
@@ -161,6 +166,9 @@ export const ROUTE_RULES: RouteRule[] = [
 
   // --- Notifications ---
   { prefix: '/api/v1/notifications', service: 'core-api' },
+
+  // --- Cloud Demo Control Plane ---
+  { prefix: '/api/v1/demo', service: 'core-api' },
 
   // --- Health ---
   { prefix: '/api/v1/health', service: 'core-api' },
@@ -188,7 +196,7 @@ export const PUBLIC_PATHS = [
   '/routes',
   '/api/docs',
   '/api/gateway/health',
-  // Public tracking + partner callbacks.
+  // Public tracking + external payment webhooks (inbound webhook worker requires auth).
   '/api/v1/public',
   // Thiết bị GPS dùng GPS_AUTH_TOKEN (xác thực tại chính gps-ingestion-service)
   // nên không được chặn bằng JWT ở edge.
@@ -196,12 +204,20 @@ export const PUBLIC_PATHS = [
   '/api/v1/track',
   '/api/v1/health',
   '/api/v1/webhooks/stripe',
-  '/api/v1/inbound/webhooks',
   // Login / password recovery must be reachable before a token exists.
   '/api/v1/tenant/auth',
   '/api/v1/admin/auth',
   '/api/v1/client/auth',
   '/api/v1/mobile/auth',
+  // Demo Control Plane (handles own optional session cookie & single-use handoff verification).
+  '/api/v1/demo/health',
+  '/api/v1/demo/personas',
+  '/api/v1/demo/login',
+  '/api/v1/demo/logout',
+  '/api/v1/demo/me',
+  '/api/v1/demo/handoff/exchange',
+  '/api/v1/demo/scenarios',
+  '/api/v1/demo/events',
 ];
 
 /**

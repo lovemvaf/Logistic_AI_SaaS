@@ -16,6 +16,11 @@ export function GoogleLoginButton({ tenantSlug, onError }: GoogleLoginButtonProp
   const [error, setError] = useState<string | null>(null);
   const { login } = useAuth();
   const router = useRouter();
+  const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '';
+
+  if (!googleClientId) {
+    return null;
+  }
 
   const fail = (message: string) => {
     setError(message);

@@ -1,15 +1,15 @@
 'use client';
 
-import { ReactNode, useEffect, useState } from 'react';
+import { ReactNode, useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { getToken, getUser } from '@/lib/auth';
+import { useAuth } from '@/lib/auth-context';
 import { canAccessRoute } from '@/lib/permissions';
 
 type AuthGateProps = {
   children: ReactNode;
 };
 
-const PUBLIC_PREFIXES = ['/login', '/forgot-password', '/reset-password'];
+const PUBLIC_PREFIXES = ['/login', '/forgot-password', '/reset-password', '/demo-handoff', '/build-info'];
 
 function isPublic(pathname: string) {
   return PUBLIC_PREFIXES.some(
@@ -20,30 +20,27 @@ function isPublic(pathname: string) {
 export default function AuthGate({ children }: AuthGateProps) {
   const router = useRouter();
   const pathname = usePathname();
-  const [checked, setChecked] = useState(false);
+  const { isAuthenticated, isLoading, user } = useAuth();
+
+  const publicRoute = isPublic(pathname);
 
   useEffect(() => {
-    if (isPublic(pathname)) {
-      setChecked(true);
-      return;
-    }
-
-    const token = getToken();
-    if (!token) {
+    if (publicRoute || isLoading) return;
+    if (!isAuthenticated) {
       router.replace('/login');
       return;
     }
-
-    const role = getUser()?.role;
+    const role = user?.role;
     if (role && !canAccessRoute(role, pathname)) {
       router.replace('/dashboard');
-      return;
     }
+  }, [publicRoute, isLoading, isAuthenticated, user?.role, pathname, router]);
 
-    setChecked(true);
-  }, [pathname, router]);
+  if (publicRoute) {
+    return <>{children}</>;
+  }
 
-  if (!checked) {
+  if (isLoading || !isAuthenticated) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-canvas">
         <p className="border-l-2 border-line-strong py-1 pl-3 text-[12px] text-ink-faint">

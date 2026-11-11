@@ -14,7 +14,9 @@ function ShellInner({ children }: { children: ReactNode }) {
   const isAuthRoute =
     pathname.startsWith('/login') ||
     pathname.startsWith('/forgot-password') ||
-    pathname.startsWith('/reset-password');
+    pathname.startsWith('/reset-password') ||
+    pathname.startsWith('/demo-handoff') ||
+    pathname.startsWith('/build-info');
 
   if (isAuthRoute) {
     return <>{children}</>;

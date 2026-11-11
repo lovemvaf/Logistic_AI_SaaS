@@ -1,4 +1,4 @@
-import { Controller, Get, UseGuards, InternalServerErrorException } from "@nestjs/common"
+import { Controller, Get, Post, Param, NotFoundException, UseGuards, InternalServerErrorException } from "@nestjs/common"
 import { PrismaService } from "../../../core/prisma/prisma.service"
 import { JwtAuthGuard } from "../../../core/auth/jwt-auth.guard"
 import { Permissions, PermissionsGuard, RequirePermissions, RequireRoles, Roles } from "shared-types";
@@ -130,5 +130,39 @@ export class AdminDashboardController {
         "Failed to fetch logistics dashboard stats",
       );
     }
+  }
+
+  @Get("outbox")
+  @RequirePermissions(Permissions.BillingRead)
+  async listOutbox() {
+    return this.prisma.runAsPlatform(async (db) =>
+      db.outboxEvent.findMany({
+        orderBy: { createdAt: "desc" },
+        take: 100,
+      }),
+    );
+  }
+
+  @Post("outbox/:id/redrive")
+  @RequirePermissions(Permissions.BillingRead)
+  async redriveOutbox(@Param("id") id: string) {
+    return this.prisma.runAsPlatform(async (db) => {
+      const found = await db.outboxEvent.findUnique({ where: { id } });
+      if (!found) {
+        throw new NotFoundException(`Outbox event ${id} not found`);
+      }
+      return db.outboxEvent.update({
+        where: { id },
+        data: {
+          status: "PENDING",
+          attempts: 0,
+          lastError: null,
+          deadLetterReason: null,
+          lockedBy: null,
+          leaseUntil: null,
+          availableAt: new Date(),
+        },
+      });
+    });
   }
 }

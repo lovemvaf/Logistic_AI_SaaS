@@ -7,10 +7,14 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'smartlogi_app') THEN
     CREATE ROLE smartlogi_app NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS NOREPLICATION;
   END IF;
+  IF current_user <> 'smartlogi_app' THEN
+    EXECUTE format('GRANT smartlogi_app TO %I', current_user);
+  END IF;
 END $$;
 
 GRANT USAGE ON SCHEMA public TO smartlogi_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO smartlogi_app;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO smartlogi_app;
 GRANT EXECUTE ON FUNCTION public.app_current_tenant_id() TO smartlogi_app;
 
 -- 2. Verify FORCE ROW LEVEL SECURITY metadata on hardened + core tenant tables
@@ -23,10 +27,40 @@ DECLARE
     'invoices',
     'payment_transactions',
     'tenant_api_keys',
+    'client_api_keys',
+    'api_idempotency_records',
+    'public_tracking_grants',
+    'webhook_deliveries',
     'feature_flags',
     'tenant_settings',
     'api_usage_daily',
-    'tenant_ui_configs'
+    'tenant_ui_configs',
+    'tractor_units',
+    'chassis_units',
+    'container_equipments',
+    'equipment_assignments',
+    'yards',
+    'yard_slots',
+    'container_gate_events',
+    'equipment_interchange_receipts',
+    'contract_rates',
+    'surcharge_rules',
+    'dem_det_rules',
+    'freight_rfqs',
+    'freight_quotes',
+    'quote_lines',
+    'freight_bookings',
+    'freight_shipments',
+    'freight_legs',
+    'freight_invoices',
+    'freight_ledger_entries',
+    'payment_allocations',
+    'dispute_cases',
+    'trade_documents',
+    'trade_document_versions',
+    'customs_declarations',
+    'customs_status_events',
+    'hs_code_suggestions'
   ];
   has_rls boolean;
   has_force boolean;
@@ -125,6 +159,41 @@ VALUES
   ('11111111-1111-4111-8111-aaaaaaaa0014', '11111111-1111-4111-8111-111111111111', 'Alpha Portal', now()),
   ('22222222-2222-4222-8222-bbbbbbbb0014', '22222222-2222-4222-8222-222222222222', 'Beta Portal', now());
 
+INSERT INTO public."clients" ("id", "tenant_id", "name", "status", "updated_at")
+VALUES
+  ('11111111-1111-4111-8111-aaaaaaaa0015', '11111111-1111-4111-8111-111111111111', 'Client Alpha', 'ACTIVE', now()),
+  ('22222222-2222-4222-8222-bbbbbbbb0015', '22222222-2222-4222-8222-222222222222', 'Client Beta', 'ACTIVE', now());
+
+INSERT INTO public."client_api_keys" ("id", "tenant_id", "client_id", "key_hash", "name", "scopes", "updated_at")
+VALUES
+  ('11111111-1111-4111-8111-aaaaaaaa0016', '11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-aaaaaaaa0015', 'rls_ckey_a', 'CA Key', ARRAY['orders:read']::text[], now()),
+  ('22222222-2222-4222-8222-bbbbbbbb0016', '22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-bbbbbbbb0015', 'rls_ckey_b', 'CB Key', ARRAY['orders:read']::text[], now());
+
+INSERT INTO public."api_idempotency_records" ("id", "tenant_id", "principal_id", "operation", "idempotency_key", "body_sha256", "state", "expires_at", "updated_at")
+VALUES
+  ('11111111-1111-4111-8111-aaaaaaaa0017', '11111111-1111-4111-8111-111111111111', 'user-a', 'POST:/orders', 'idem-rls-1', 'hash-a', 'COMPLETED', now() + interval '1 day', now()),
+  ('22222222-2222-4222-8222-bbbbbbbb0017', '22222222-2222-4222-8222-222222222222', 'user-b', 'POST:/orders', 'idem-rls-1', 'hash-b', 'COMPLETED', now() + interval '1 day', now());
+
+INSERT INTO public."public_tracking_grants" ("id", "tenant_id", "tracking_code", "token_hash", "expires_at", "updated_at")
+VALUES
+  ('11111111-1111-4111-8111-aaaaaaaa0018', '11111111-1111-4111-8111-111111111111', 'TRK-RLS-AAA1', 'grant_hash_a', now() + interval '1 day', now()),
+  ('22222222-2222-4222-8222-bbbbbbbb0018', '22222222-2222-4222-8222-222222222222', 'TRK-RLS-BBB1', 'grant_hash_b', now() + interval '1 day', now());
+
+INSERT INTO public."webhook_deliveries" ("id", "webhook_id", "tenant_id", "url", "event", "status")
+VALUES
+  ('11111111-1111-4111-8111-aaaaaaaa0019', 'wh-a', '11111111-1111-4111-8111-111111111111', 'https://a.example.com/hook', 'order.created', 'DELIVERED'),
+  ('22222222-2222-4222-8222-bbbbbbbb0019', 'wh-b', '22222222-2222-4222-8222-222222222222', 'https://b.example.com/hook', 'order.created', 'DELIVERED');
+
+INSERT INTO public."freight_bookings" ("id", "tenant_id", "booking_no", "service_mode", "status", "updated_at")
+VALUES
+  ('11111111-1111-4111-8111-aaaaaaaa0020', '11111111-1111-4111-8111-111111111111', 'BK-RLS-AAA1', 'FCL_EXPORT', 'CONFIRMED', now()),
+  ('22222222-2222-4222-8222-bbbbbbbb0020', '22222222-2222-4222-8222-222222222222', 'BK-RLS-BBB1', 'FCL_EXPORT', 'CONFIRMED', now());
+
+INSERT INTO public."customs_declarations" ("id", "tenant_id", "declaration_no", "direction", "channel", "port_code", "status", "updated_at")
+VALUES
+  ('11111111-1111-4111-8111-aaaaaaaa0021', '11111111-1111-4111-8111-111111111111', 'DEC-RLS-AAA1', 'EXPORT', 'GREEN', 'VNSGN', 'NEEDS_CUSTOMS_REVIEW', now()),
+  ('22222222-2222-4222-8222-bbbbbbbb0021', '22222222-2222-4222-8222-222222222222', 'DEC-RLS-BBB1', 'EXPORT', 'RED', 'VNSGN', 'NEEDS_CUSTOMS_REVIEW', now());
+
 -- 4. Drop bypass and enforce restricted role + Tenant A GUC
 SELECT set_config('app.bypass_rls', '', true);
 SET LOCAL ROLE smartlogi_app;
@@ -171,6 +240,30 @@ BEGIN
   SELECT count(*) INTO cnt FROM public.tenant_ui_configs
    WHERE id IN ('11111111-1111-4111-8111-aaaaaaaa0014', '22222222-2222-4222-8222-bbbbbbbb0014');
   IF cnt <> 1 THEN RAISE EXCEPTION 'tenant_ui_configs RLS failed: expected 1 row, got %', cnt; END IF;
+
+  SELECT count(*) INTO cnt FROM public.client_api_keys
+   WHERE id IN ('11111111-1111-4111-8111-aaaaaaaa0016', '22222222-2222-4222-8222-bbbbbbbb0016');
+  IF cnt <> 1 THEN RAISE EXCEPTION 'client_api_keys RLS failed: expected 1 row, got %', cnt; END IF;
+
+  SELECT count(*) INTO cnt FROM public.api_idempotency_records
+   WHERE id IN ('11111111-1111-4111-8111-aaaaaaaa0017', '22222222-2222-4222-8222-bbbbbbbb0017');
+  IF cnt <> 1 THEN RAISE EXCEPTION 'api_idempotency_records RLS failed: expected 1 row, got %', cnt; END IF;
+
+  SELECT count(*) INTO cnt FROM public.public_tracking_grants
+   WHERE id IN ('11111111-1111-4111-8111-aaaaaaaa0018', '22222222-2222-4222-8222-bbbbbbbb0018');
+  IF cnt <> 1 THEN RAISE EXCEPTION 'public_tracking_grants RLS failed: expected 1 row, got %', cnt; END IF;
+
+  SELECT count(*) INTO cnt FROM public.webhook_deliveries
+   WHERE id IN ('11111111-1111-4111-8111-aaaaaaaa0019', '22222222-2222-4222-8222-bbbbbbbb0019');
+  IF cnt <> 1 THEN RAISE EXCEPTION 'webhook_deliveries RLS failed: expected 1 row, got %', cnt; END IF;
+
+  SELECT count(*) INTO cnt FROM public.freight_bookings
+   WHERE id IN ('11111111-1111-4111-8111-aaaaaaaa0020', '22222222-2222-4222-8222-bbbbbbbb0020');
+  IF cnt <> 1 THEN RAISE EXCEPTION 'freight_bookings RLS failed: expected 1 row, got %', cnt; END IF;
+
+  SELECT count(*) INTO cnt FROM public.customs_declarations
+   WHERE id IN ('11111111-1111-4111-8111-aaaaaaaa0021', '22222222-2222-4222-8222-bbbbbbbb0021');
+  IF cnt <> 1 THEN RAISE EXCEPTION 'customs_declarations RLS failed: expected 1 row, got %', cnt; END IF;
 
   -- Cross-tenant UPDATE/DELETE must match 0 rows
   UPDATE public.orders

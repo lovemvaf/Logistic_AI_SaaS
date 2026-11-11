@@ -1,12 +1,13 @@
 # Báo Cáo Tiến Độ, Mức Độ Hoàn Thiện & Đánh Giá Thực Tế Mã Nguồn Hệ Thống SmartLogi AI SaaS
 
 > [!CAUTION]
-> **Bản superseded (chốt ngày 06/09/2026 — Đã bị thay thế bởi kết quả kiểm toán mã nguồn 11/11/2026).**
+> **Bản superseded (chốt ngày 06/09/2026 — Đã bị thay thế bởi kết quả kiểm toán và nâng cấp Gate G0–G7 ngày 11–12/11/2026).**
 > Các con số phần trăm tổng hợp như `89.7%`, `95%` (GPS "Sẵn sàng Production"), `92%` (WMS), `85%` (OR-Tools VRPTW) hay nhận định "Sẵn sàng Vận hành Thử nghiệm (Staging / Pilot)" trong tài liệu cũ này **không có rubric đo đạc và không có log kiểm thử kèm theo**.
 >
-> Trạng thái đúng sự thật của từng tính năng và kết quả rà soát được duy trì theo hệ nhãn chuẩn hóa (`implemented`, `partial`, `mock`, `demo-only`, `ci-verified`) tại:
-> - Bảng truy vết chi tiết từng yêu cầu/lỗi: [upgrade/coverage.csv](upgrade/coverage.csv)
-> - Nhật ký xác minh tĩnh (`8/8`) & CI GitHub Actions đạt 6/6 jobs ([Run 43023689371](https://github.com/lovemvaf/Logistic_AI_SaaS/actions/runs/43023689371), commit `75cf1ea`; vẫn tách riêng phần staging live/Pilot chưa chạy): [upgrade/verification.md](upgrade/verification.md)
+> Trạng thái đúng sự thật của từng tính năng, kết quả kiểm thử thực tế (`12/12` Jest suites, `5/5` AI Worker suites, Go `-race`, Playwright E2E `12/12`, `88/106` `FORCE RLS`) và 4 Vercel Preview `visionary19` được duy trì theo hệ nhãn chuẩn hóa tại:
+> - Bảng truy vết chi tiết (`173` ID): [upgrade/coverage.csv](upgrade/coverage.csv) & [upgrade/enterprise-execution-matrix.csv](upgrade/enterprise-execution-matrix.csv)
+> - Nhật ký xác minh tĩnh (`8/8`), E2E cục bộ & GitHub Actions CI **6/6 jobs PASSED** ([Run 43023689371](https://github.com/lovemvaf/Logistic_AI_SaaS/actions/runs/43023689371) -> [Run 43069842957](https://github.com/lovemvaf/Logistic_AI_SaaS/actions/runs/43069842957), vẫn tách rạch ròi `[BLOCKED]` hạ tầng cloud công khai & `[CHƯA ĐO PILOT]`): [upgrade/verification.md](upgrade/verification.md)
+> - Bằng chứng triển khai Vercel `visionary19`: [deployment/DEPLOYMENT_EVIDENCE.md](deployment/DEPLOYMENT_EVIDENCE.md)
 > - Hồ sơ đính chính B3–B4 (Bảng 8–9, 10, 11): [ho-so-cap-nhat-B3-B4.md](ho-so-cap-nhat-B3-B4.md)
 
 ---

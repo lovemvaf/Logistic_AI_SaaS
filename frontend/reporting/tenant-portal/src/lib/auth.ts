@@ -6,6 +6,8 @@ export type TenantSession = {
     fullName?: string;
     role?: string;
     tenantId?: string;
+    slug?: string;
+    readOnlyGuest?: boolean;
   };
 };
 
@@ -17,8 +19,12 @@ const isBrowser = () => typeof window !== "undefined";
 export const decodeJwt = (token: string): any => {
   try {
     const payload = token.split(".")[1];
-    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
-    const decoded = atob(normalized);
+    if (!payload) return null;
+    const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), "=");
+    const binary = atob(padded);
+    const bytes = Uint8Array.from(binary, (ch) => ch.charCodeAt(0));
+    const decoded = new TextDecoder().decode(bytes);
     return JSON.parse(decoded);
   } catch {
     return null;
@@ -42,19 +48,31 @@ export const getUser = () => {
   }
 };
 
-export const setSession = (token: string) => {
+export const setUserRecord = (user: Record<string, any>) => {
+  if (!isBrowser()) return;
+  window.localStorage.setItem(USER_KEY, JSON.stringify(user));
+  if (user.tenantSlug || user.slug) {
+    window.localStorage.setItem("smartlogi_tenant_slug", user.tenantSlug || user.slug);
+  }
+};
+
+export const setSession = (token: string, overrideUser?: Record<string, any>) => {
   if (!isBrowser()) return;
   const payload = decodeJwt(token) || {};
   const user = {
-    id: payload.sub || payload.userId || "",
-    email: payload.email || "",
-    fullName: payload.fullName || payload.name || undefined,
-    role: payload.role || "TENANT_USER",
-    tenantId: payload.tenant_id || payload.tenantId,
-    slug: payload.tenant_slug || "",
+    id: overrideUser?.id || payload.sub || payload.userId || "",
+    email: overrideUser?.email || payload.email || "",
+    fullName: overrideUser?.fullName || payload.fullName || payload.name || undefined,
+    role: overrideUser?.role || payload.role || "TENANT_USER",
+    tenantId: overrideUser?.tenantId ?? payload.tenant_id ?? payload.tenantId,
+    slug: overrideUser?.tenantSlug ?? overrideUser?.slug ?? payload.tenant_slug ?? "",
+    readOnlyGuest: Boolean(overrideUser?.readOnlyGuest ?? payload.readOnlyGuest),
   };
   window.localStorage.setItem(TOKEN_KEY, token);
   window.localStorage.setItem(USER_KEY, JSON.stringify(user));
+  if (user.slug) {
+    window.localStorage.setItem("smartlogi_tenant_slug", user.slug);
+  }
 };
 
 export const clearSession = () => {

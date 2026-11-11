@@ -2,16 +2,19 @@ export enum SyncStatus {
   PENDING = 'PENDING',
   SYNCING = 'SYNCING',
   COMPLETED = 'COMPLETED',
-  FAILED = 'FAILED'
+  FAILED = 'FAILED',
+  DEAD_LETTER = 'DEAD_LETTER',
 }
 
 export interface SyncAction {
   id: string;
+  sequence?: number;
   table: string;
   action: 'CREATE' | 'UPDATE' | 'DELETE';
   payload: any;
   status: SyncStatus;
   retryCount: number;
+  nextAttemptAt?: number;
   lastError?: string;
   createdAt: number;
 }
@@ -42,16 +45,24 @@ const DEFAULT_CONFIG: Partial<SyncConfig> = {
 const STORAGE_KEY = 'offline_sync_queue';
 const DELTA_KEY = 'offline_sync_delta';
 const MAX_RETRY_COUNT = 5;
+let monotonicSequence = 0;
 
 function generateId(): string {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
   }
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = Math.random() * 16 | 0;
-    const v = c === 'x' ? r : (r & 0x3 | 0x8);
-    return v.toString(16);
-  });
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  }
+  monotonicSequence += 1;
+  const tsHex = Date.now().toString(16).padStart(12, '0');
+  const seqHex = monotonicSequence.toString(16).padStart(8, '0');
+  return `${tsHex.slice(0, 8)}-${tsHex.slice(8, 12)}-4000-8000-${seqHex}0000`;
 }
 
 function loadFromStorage<T>(key: string): T[] {
@@ -84,8 +95,10 @@ export class OfflineSyncEngine {
   }
 
   static createAction(table: string, action: 'CREATE' | 'UPDATE' | 'DELETE', payload: any): SyncAction {
+    monotonicSequence = Math.max(monotonicSequence + 1, Date.now());
     return {
       id: generateId(),
+      sequence: monotonicSequence,
       table,
       action,
       payload,
@@ -144,14 +157,19 @@ export class OfflineSyncEngine {
   }
 
   static prepareSyncBatch(queue: SyncAction[], batchSize: number = 50): any {
-    const pendingActions = queue.filter(a =>
-      (a.status === SyncStatus.PENDING || a.status === SyncStatus.FAILED) &&
-      a.retryCount < MAX_RETRY_COUNT
-    ).slice(0, batchSize);
+    const now = Date.now();
+    const pendingActions = queue
+      .filter((a) =>
+        (a.status === SyncStatus.PENDING || a.status === SyncStatus.FAILED) &&
+        a.retryCount < MAX_RETRY_COUNT &&
+        (!a.nextAttemptAt || a.nextAttemptAt <= now)
+      )
+      .sort((a, b) => (a.sequence || a.createdAt) - (b.sequence || b.createdAt))
+      .slice(0, batchSize);
     return {
       batchId: generateId(),
       actions: pendingActions,
-      timestamp: Date.now()
+      timestamp: now
     };
   }
 
@@ -179,6 +197,7 @@ export class OfflineSyncEngine {
     for (const action of batch.actions) {
       try {
         action.status = SyncStatus.SYNCING;
+        saveToStorage(STORAGE_KEY, queue);
 
         const method = action.action === 'DELETE' ? 'DELETE' : action.action === 'CREATE' ? 'POST' : 'PATCH';
 
@@ -202,14 +221,22 @@ export class OfflineSyncEngine {
         }
 
         action.status = SyncStatus.COMPLETED;
+        action.nextAttemptAt = undefined;
         result.syncedCount++;
       } catch (error) {
-        action.status = SyncStatus.FAILED;
         action.retryCount++;
         action.lastError = error instanceof Error ? error.message : String(error);
+        if (action.retryCount >= MAX_RETRY_COUNT) {
+          action.status = SyncStatus.DEAD_LETTER;
+          action.nextAttemptAt = undefined;
+        } else {
+          action.status = SyncStatus.FAILED;
+          action.nextAttemptAt = Date.now() + Math.min(300_000, 1000 * 2 ** action.retryCount);
+        }
         result.failedCount++;
         result.errors.push(action.lastError);
       }
+      saveToStorage(STORAGE_KEY, queue);
     }
 
     saveToStorage(STORAGE_KEY, queue.filter(a => a.status !== SyncStatus.COMPLETED));

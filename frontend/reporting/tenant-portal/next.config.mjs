@@ -1,13 +1,30 @@
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 /** @type {import('next').NextConfig} */
+const isVercel = process.env.VERCEL === '1';
+
 const nextConfig = {
-  output: 'standalone',
-  typescript: { ignoreBuildErrors: true },
+  ...(isVercel ? {} : { output: 'standalone' }),
+  typescript: { ignoreBuildErrors: false },
   eslint: { ignoreDuringBuilds: true },
+  reactStrictMode: true,
+  serverExternalPackages: ['@prisma/client', 'prisma', 'bcryptjs'],
+  outputFileTracingRoot: path.join(__dirname, '../../..'),
+  outputFileTracingIncludes: {
+    '/api/v1/[[...path]]': [
+      '../../../node_modules/.prisma/client/**/*',
+      '../../../node_modules/@prisma/client/**/*',
+      '../../../node_modules/.pnpm/@prisma+client@*/node_modules/.prisma/client/**/*',
+      '../../../node_modules/.pnpm/@prisma+client@*/node_modules/@prisma/client/**/*',
+    ],
+  },
   async rewrites() {
-    // All API traffic is proxied to the API Gateway. This keeps SSR requests
-    // working inside Docker (where 127.0.0.1 points at the portal container,
-    // not at the backend services).
-    const gateway = process.env.API_INTERNAL_URL || 'http://api-gateway:3000';
+    const rawGateway = process.env.API_INTERNAL_URL || '';
+    const gateway = rawGateway.replace(/\/api\/v1\/?$/, '').replace(/\/+$/, '');
+    if (!gateway) return [];
     return [
       {
         source: '/api/v1/:path*',
@@ -15,7 +32,6 @@ const nextConfig = {
       },
     ];
   },
-
 };
 
 export default nextConfig;

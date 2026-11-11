@@ -78,7 +78,7 @@ export class AdminTenantsController {
       startOfMonth.setDate(1);
       startOfMonth.setHours(0, 0, 0, 0);
 
-      await this.prisma.runWithSchema(tenant.dbSchemaName, async () => {
+      await this.prisma.runWithTenantRequest(tenant.id, tenant.dbSchemaName, async () => {
         const db = this.prisma.getTenantDb();
         const [users, orders] = await Promise.all([
           db.tenantUser.count().catch(() => 0),

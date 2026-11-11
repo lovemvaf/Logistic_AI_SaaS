@@ -1,5 +1,6 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
@@ -13,27 +14,69 @@ datasource db {
 ///
 /// Bảng này thuộc lớp platform (đọc/ghi xuyên tenant) nên không bật RLS.
 model OutboxEvent {
-  id          String    @id @default(uuid())
-  tenantId    String?   @map("tenant_id")
+  id               String    @id @default(uuid())
+  eventId          String    @unique @default(uuid()) @map("event_id")
+  schemaVersion    String    @default("1.0") @map("schema_version")
+  aggregateId      String?   @map("aggregate_id")
+  payloadHash      String?   @map("payload_hash")
+  correlationId    String?   @map("correlation_id")
+  tenantId         String?   @map("tenant_id")
   /// Kênh gửi: KAFKA | WEBHOOK
-  channel     String
+  channel          String
   /// Tên topic/event, ví dụ `order.created`
-  topic       String
-  payload     Json
-  /// PENDING | PROCESSING | SENT | FAILED
-  status      String    @default("PENDING")
-  attempts    Int       @default(0)
-  lastError   String?   @map("last_error")
+  topic            String
+  payload          Json
+  /// PENDING | PROCESSING | SENT | FAILED | DEAD_LETTER
+  status           String    @default("PENDING")
+  attempts         Int       @default(0)
+  lastError        String?   @map("last_error")
+  deadLetterReason String?   @map("dead_letter_reason")
+  lockedBy         String?   @map("locked_by")
+  leaseUntil       DateTime? @map("lease_until")
   /// Thời điểm sớm nhất được gửi lại (backoff khi thất bại)
-  availableAt DateTime  @default(now()) @map("available_at")
-  processedAt DateTime? @map("processed_at")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
+  availableAt      DateTime  @default(now()) @map("available_at")
+  processedAt      DateTime? @map("processed_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
 
   @@index([status, availableAt])
+  @@index([status, leaseUntil])
   @@index([tenantId])
   @@index([topic])
   @@map("outbox_events")
+}
+
+model EventConsumptionLedger {
+  id            String   @id @default(uuid())
+  eventId       String   @map("event_id")
+  consumerGroup String   @map("consumer_group")
+  tenantId      String?  @map("tenant_id")
+  topic         String
+  processedAt   DateTime @default(now()) @map("processed_at")
+
+  @@unique([eventId, consumerGroup])
+  @@index([tenantId])
+  @@map("event_consumption_ledger")
+}
+
+model ApiIdempotencyRecord {
+  id             String   @id @default(uuid())
+  tenantId       String   @default("public") @map("tenant_id")
+  principalId    String   @default("anon") @map("principal_id")
+  operation      String
+  idempotencyKey String   @map("idempotency_key")
+  bodySha256     String   @map("body_sha256")
+  state          String   @default("PROCESSING")
+  statusCode     Int?     @map("status_code")
+  responseBody   Json?    @map("response_body")
+  expiresAt      DateTime @map("expires_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, principalId, operation, idempotencyKey])
+  @@index([expiresAt])
+  @@index([tenantId])
+  @@map("api_idempotency_records")
 }
 
 model Tenant {
@@ -55,13 +98,41 @@ model Tenant {
   updatedAt         DateTime          @updatedAt @map("updated_at")
   deletedAt         DateTime?         @map("deleted_at")
 
-  apiKeys             TenantApiKey[]
-  featureFlags        FeatureFlag[]
-  settings            TenantSetting[]
-  invoices            Invoice[]
-  paymentTransactions PaymentTransaction[]
-  apiUsageDaily       ApiUsageDaily[]
-  uiConfig            TenantUiConfig?
+  apiKeys              TenantApiKey[]
+  clientApiKeys        ClientApiKey[]
+  publicTrackingGrants PublicTrackingGrant[]
+  featureFlags         FeatureFlag[]
+  settings             TenantSetting[]
+  invoices             Invoice[]
+  paymentTransactions  PaymentTransaction[]
+  apiUsageDaily        ApiUsageDaily[]
+  uiConfig             TenantUiConfig?
+  tractors             TractorUnit[]
+  chassisUnits         ChassisUnit[]
+  containers           ContainerEquipment[]
+  equipmentAssignments EquipmentAssignment[]
+  yards                Yard[]
+  yardSlots            YardSlot[]
+  containerGateEvents  ContainerGateEvent[]
+  eirs                 EquipmentInterchangeReceipt[]
+  contractRates        ContractRate[]
+  surchargeRules       SurchargeRule[]
+  demDetRules          DemDetRule[]
+  freightRfqs          FreightRFQ[]
+  freightQuotes        FreightQuote[]
+  quoteLines           QuoteLine[]
+  freightBookings      FreightBooking[]
+  freightShipments     FreightShipment[]
+  freightLegs          FreightLeg[]
+  freightInvoices      FreightInvoice[]
+  freightLedgerEntries FreightLedgerEntry[]
+  paymentAllocations   PaymentAllocation[]
+  disputeCases         DisputeCase[]
+  tradeDocuments       TradeDocument[]
+  tradeDocVersions     TradeDocumentVersion[]
+  customsDeclarations  CustomsDeclaration[]
+  customsStatusEvents  CustomsStatusEvent[]
+  hsCodeSuggestions    HSCodeSuggestion[]
 }
 
 model SubscriptionPlan {
@@ -492,8 +563,16 @@ model Client {
   users    ClientUser[]
   orders   Order[]
   webhooks ClientWebhook[]
-  apiKeys  ClientApiKey[]
-  invoices Invoice[]
+  apiKeys          ClientApiKey[]
+  invoices         Invoice[]
+  freightRfqs      FreightRFQ[]
+  freightQuotes    FreightQuote[]
+  freightBookings  FreightBooking[]
+  freightShipments FreightShipment[]
+  freightInvoices  FreightInvoice[]
+  disputeCases     DisputeCase[]
+  tradeDocuments   TradeDocument[]
+  contractRates    ContractRate[]
 
   @@index([status])
   @@index([createdAt])
@@ -1329,6 +1408,7 @@ model TenantApiKey {
 
 model ClientApiKey {
   id        String    @id @default(uuid())
+  tenantId  String    @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
   clientId  String    @map("client_id")
   keyHash   String    @unique @map("key_hash")
   name      String?
@@ -1338,10 +1418,61 @@ model ClientApiKey {
   revokedAt DateTime? @map("revoked_at")
   deletedAt DateTime? @map("deleted_at")
 
+  tenant Tenant @relation(fields: [tenantId], references: [id])
   client Client @relation(fields: [clientId], references: [id])
 
   @@index([clientId])
+  @@index([tenantId])
   @@map("client_api_keys")
+}
+
+model PublicTrackingGrant {
+  id               String    @id @default(uuid())
+  tenantId         String    @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  trackingCode     String    @map("tracking_code")
+  orderId          String?   @map("order_id")
+  shipmentId       String?   @map("shipment_id")
+  tokenHash        String    @unique @map("token_hash")
+  allowedPrecision String    @default("CITY_WARD") @map("allowed_precision")
+  expiresAt        DateTime  @map("expires_at")
+  revokedAt        DateTime? @map("revoked_at")
+  createdBy        String?   @map("created_by")
+  accessCount      Int       @default(0) @map("access_count")
+  lastAccessedAt   DateTime? @map("last_accessed_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@index([trackingCode])
+  @@index([expiresAt])
+  @@map("public_tracking_grants")
+}
+
+model WebhookDelivery {
+  id              String    @id @default(uuid())
+  webhookId       String    @map("webhook_id")
+  tenantId        String?   @map("tenant_id")
+  url             String
+  event           String
+  status          String    @default("QUEUED")
+  attempts        Int       @default(0)
+  maxRetries      Int       @default(5) @map("max_retries")
+  lastStatusCode  Int?      @map("last_status_code")
+  lastError       String?   @map("last_error")
+  dlqReason       String?   @map("dlq_reason")
+  idempotencyKey  String?   @map("idempotency_key")
+  payloadJson     Json?     @map("payload_json")
+  nextRetryAt     DateTime? @map("next_retry_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  lastAttemptedAt DateTime? @map("last_attempted_at")
+  completedAt     DateTime? @map("completed_at")
+
+  @@index([tenantId])
+  @@index([status, createdAt])
+  @@index([webhookId])
+  @@map("webhook_deliveries")
 }
 
 model FeatureFlag {
@@ -1483,4 +1614,931 @@ model TenantUiConfig {
   tenant Tenant @relation(fields: [tenantId], references: [id])
 
   @@map("tenant_ui_configs")
+}
+
+// =========================================================================
+// GATE G4 ENTERPRISE MODELS:
+// 1. Global Geography & Transport Corridors (TP Dong Nai 2026 - 95 Units + External Ports)
+// 2. Container, Tractor, Chassis & Yard/Depot/EIR (FORCE RLS)
+// 3. Freight Commercial, RFQ/Quotes, Bookings, DEM/DET, AR/AP & Disputes (FORCE RLS)
+// 4. Trade / XNK Documents, Customs Declarations & HS Advisory Approval (FORCE RLS)
+// =========================================================================
+
+model AdministrativeUnit {
+  id                 String   @id @default(uuid())
+  canonicalName      String   @map("canonical_name")
+  normalizedName     String   @map("normalized_name")
+  unitType           String   @map("unit_type") // WARD | COMMUNE
+  provinceName       String   @default("Thành phố Đồng Nai") @map("province_name")
+  provinceCode       String   @default("DONG_NAI_2026") @map("province_code")
+  corridor           String?  // NORTH | CENTRAL | SOUTH
+  officialCode       String?  @map("official_code")
+  officialCodeStatus String   @default("PENDING_OFFICIAL_CODE") @map("official_code_status")
+  boundaryStatus     String   @default("NO_OFFICIAL_POLYGON") @map("boundary_status")
+  sourceDoc          String   @default("NQ_30_2026_QH16 / NQ_1662_2025") @map("source_doc")
+  isActive           Boolean  @default(true) @map("is_active")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  aliases           AdministrativeAlias[]
+  boundaryVersions  AdministrativeBoundaryVersion[]
+  facilities        LogisticsFacility[]
+
+  @@unique([provinceCode, unitType, normalizedName])
+  @@index([unitType])
+  @@index([corridor])
+  @@index([normalizedName])
+  @@map("administrative_units")
+}
+
+model AdministrativeAlias {
+  id              String   @id @default(uuid())
+  unitId          String   @map("unit_id")
+  aliasName       String   @map("alias_name")
+  normalizedAlias String   @map("normalized_alias")
+  aliasType       String   @default("PRE_2025_NAME") @map("alias_type") // PRE_2025_NAME | COMMON_VARIANT | ABBREVIATION
+  sourceDoc       String?  @map("source_doc")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  unit AdministrativeUnit @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  @@unique([unitId, normalizedAlias])
+  @@index([normalizedAlias])
+  @@map("administrative_aliases")
+}
+
+model AdministrativeBoundaryVersion {
+  id              String    @id @default(uuid())
+  unitId          String    @map("unit_id")
+  versionTag      String    @map("version_tag")
+  sourceDoc       String    @map("source_doc")
+  sourceUrl       String?   @map("source_url")
+  officialCode    String?   @map("official_code")
+  geometryGeoJson Json?     @map("geometry_geojson")
+  boundaryStatus  String    @default("NO_OFFICIAL_POLYGON") @map("boundary_status")
+  verifiedAt      DateTime? @map("verified_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  unit AdministrativeUnit @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  @@unique([unitId, versionTag])
+  @@index([boundaryStatus])
+  @@map("administrative_boundary_versions")
+}
+
+model LogisticsFacility {
+  id                   String   @id @default(uuid())
+  code                 String   @unique
+  name                 String
+  facilityType         String   @map("facility_type") // ICD | SEAPORT | INDUSTRIAL_PARK | BORDER_GATE | AIRPORT | DEPOT
+  administrativeUnitId String?  @map("administrative_unit_id")
+  localityName         String   @map("locality_name")
+  provinceCode         String   @default("DONG_NAI_2026") @map("province_code")
+  outsideCity          Boolean  @default(false) @map("outside_city")
+  corridor             String?
+  lat                  Decimal?
+  lng                  Decimal?
+  gateCount            Int      @default(4) @map("gate_count")
+  capacityTeu          Int?     @map("capacity_teu")
+  sourceType           String   @default("SYNTHETIC_DEMO") @map("source_type") // OFFICIAL_REF | SYNTHETIC_DEMO
+  isActive             Boolean  @default(true) @map("is_active")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  administrativeUnit AdministrativeUnit?        @relation(fields: [administrativeUnitId], references: [id], onDelete: SetNull)
+  geofences          FacilityGeofence[]
+  originCorridors    TransportCorridor[]        @relation("CorridorOrigin")
+  destCorridors      TransportCorridor[]        @relation("CorridorDest")
+  roadRestrictions   RoadRestriction[]
+  queueObservations  TerminalQueueObservation[]
+  originBookings     FreightBooking[]           @relation("BookingOriginFacility")
+  destBookings       FreightBooking[]           @relation("BookingDestFacility")
+
+  @@index([facilityType])
+  @@index([outsideCity])
+  @@index([corridor])
+  @@index([provinceCode])
+  @@map("logistics_facilities")
+}
+
+model FacilityGeofence {
+  id             String   @id @default(uuid())
+  facilityId     String   @map("facility_id")
+  name           String
+  radiusMeters   Int      @default(500) @map("radius_meters")
+  polygonGeoJson Json?    @map("polygon_geojson")
+  boundarySource String   @default("SYNTHETIC_RADIUS_PLACEHOLDER") @map("boundary_source")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  facility LogisticsFacility @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+
+  @@index([facilityId])
+  @@map("facility_geofences")
+}
+
+model TransportCorridor {
+  id               String   @id @default(uuid())
+  code             String   @unique
+  name             String
+  corridorTag      String   @map("corridor_tag") // NORTH | CENTRAL | SOUTH
+  highwayCode      String   @map("highway_code")
+  originFacilityId String?  @map("origin_facility_id")
+  destFacilityId   String?  @map("dest_facility_id")
+  nominalKm        Decimal  @map("nominal_km")
+  typicalMinutes   Int      @map("typical_minutes")
+  notes            String?
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  originFacility   LogisticsFacility? @relation("CorridorOrigin", fields: [originFacilityId], references: [id], onDelete: SetNull)
+  destFacility     LogisticsFacility? @relation("CorridorDest", fields: [destFacilityId], references: [id], onDelete: SetNull)
+  roadRestrictions RoadRestriction[]
+
+  @@index([corridorTag])
+  @@map("transport_corridors")
+}
+
+model RoadRestriction {
+  id              String   @id @default(uuid())
+  corridorId      String?  @map("corridor_id")
+  facilityId      String?  @map("facility_id")
+  title           String
+  maxTonnageTons  Decimal? @map("max_tonnage_tons")
+  maxHeightM      Decimal? @map("max_height_m")
+  restrictedHours String?  @map("restricted_hours")
+  severity        String   @default("WARNING") // WARNING | BLOCKING
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  corridor TransportCorridor? @relation(fields: [corridorId], references: [id], onDelete: Cascade)
+  facility LogisticsFacility? @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+
+  @@index([corridorId])
+  @@index([facilityId])
+  @@map("road_restrictions")
+}
+
+model TerminalQueueObservation {
+  id                 String   @id @default(uuid())
+  facilityId         String   @map("facility_id")
+  observedAt         DateTime @default(now()) @map("observed_at")
+  waitMinutes        Int      @map("wait_minutes")
+  queueLength        Int      @default(0) @map("queue_length")
+  sourceLabel        String   @default("SYNTHETIC_DEMO") @map("source_label")
+  isOfficialTelemetry Boolean @default(false) @map("is_official_telemetry")
+  notes              String?
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  facility LogisticsFacility @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+
+  @@index([facilityId, observedAt])
+  @@map("terminal_queue_observations")
+}
+
+// ----------------------- Equipment & Container Lifecycle -----------------------
+model TractorUnit {
+  id                String   @id @default(uuid())
+  tenantId          String   @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  unitCode          String   @map("unit_code")
+  plateNumber       String   @map("plate_number")
+  horsePower        Int      @default(420) @map("horse_power")
+  emissionStd       String   @default("EURO5") @map("emission_std")
+  status            String   @default("AVAILABLE") // AVAILABLE | IN_TRANSIT | MAINTENANCE | RETIRED
+  currentFacilityId String?  @map("current_facility_id")
+  lat               Decimal?
+  lng               Decimal?
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  tenant      Tenant                        @relation(fields: [tenantId], references: [id])
+  assignments EquipmentAssignment[]
+  gateEvents  ContainerGateEvent[]
+  eirs        EquipmentInterchangeReceipt[]
+
+  @@unique([tenantId, unitCode])
+  @@unique([tenantId, plateNumber])
+  @@index([tenantId, status])
+  @@map("tractor_units")
+}
+
+model ChassisUnit {
+  id                String   @id @default(uuid())
+  tenantId          String   @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  chassisCode       String   @map("chassis_code")
+  plateNumber       String   @map("plate_number")
+  axleCount         Int      @default(3) @map("axle_count")
+  compatibleSizes   String[] @map("compatible_sizes")
+  status            String   @default("AVAILABLE") // AVAILABLE | IN_USE | MAINTENANCE
+  currentFacilityId String?  @map("current_facility_id")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  tenant      Tenant                        @relation(fields: [tenantId], references: [id])
+  assignments EquipmentAssignment[]
+  gateEvents  ContainerGateEvent[]
+  eirs        EquipmentInterchangeReceipt[]
+
+  @@unique([tenantId, chassisCode])
+  @@unique([tenantId, plateNumber])
+  @@index([tenantId, status])
+  @@map("chassis_units")
+}
+
+model ContainerEquipment {
+  id              String    @id @default(uuid())
+  tenantId        String    @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  containerNo     String    @map("container_no")
+  sizeType        String    @default("40HC") @map("size_type") // 20GP | 40GP | 40HC | 40RF | 45HC
+  isoCode         String    @default("45G1") @map("iso_code")
+  tareWeightKg    Int       @default(3800) @map("tare_weight_kg")
+  maxPayloadKg    Int       @default(26680) @map("max_payload_kg")
+  reeferTempC     Decimal?  @map("reefer_temp_c")
+  ownershipType   String    @default("CARRIER_OWNED") @map("ownership_type") // CARRIER_OWNED | SOC | LEASED
+  status          String    @default("EMPTY_AT_DEPOT")
+  currentSealNo   String?   @map("current_seal_no")
+  lastInspectedAt DateTime? @map("last_inspected_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  tenant      Tenant                        @relation(fields: [tenantId], references: [id])
+  assignments EquipmentAssignment[]
+  yardSlots   YardSlot[]
+  gateEvents  ContainerGateEvent[]
+  eirs        EquipmentInterchangeReceipt[]
+  shipments   FreightShipment[]
+
+  @@unique([tenantId, containerNo])
+  @@index([tenantId, status])
+  @@index([sizeType])
+  @@map("container_equipments")
+}
+
+model EquipmentAssignment {
+  id           String   @id @default(uuid())
+  tenantId     String   @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  tractorId    String?  @map("tractor_id")
+  chassisId    String?  @map("chassis_id")
+  containerId  String?  @map("container_id")
+  driverId     String?  @map("driver_id")
+  freightLegId String?  @map("freight_leg_id")
+  bookingId    String?  @map("booking_id")
+  status       String   @default("RESERVED") // RESERVED | ACTIVE | COMPLETED | CANCELLED
+  startAt      DateTime @map("start_at")
+  endAt        DateTime @map("end_at")
+  notes        String?
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  tenant     Tenant              @relation(fields: [tenantId], references: [id])
+  tractor    TractorUnit?        @relation(fields: [tractorId], references: [id], onDelete: SetNull)
+  chassis    ChassisUnit?        @relation(fields: [chassisId], references: [id], onDelete: SetNull)
+  container  ContainerEquipment? @relation(fields: [containerId], references: [id], onDelete: SetNull)
+  freightLeg FreightLeg?         @relation(fields: [freightLegId], references: [id], onDelete: SetNull)
+  booking    FreightBooking?     @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, status])
+  @@index([tractorId, startAt, endAt])
+  @@index([chassisId, startAt, endAt])
+  @@index([containerId, startAt, endAt])
+  @@index([driverId, startAt, endAt])
+  @@map("equipment_assignments")
+}
+
+// ----------------------- Yard / Depot / EIR -----------------------
+model Yard {
+  id          String   @id @default(uuid())
+  tenantId    String   @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  code        String
+  name        String
+  facilityId  String?  @map("facility_id")
+  totalSlots  Int      @default(40) @map("total_slots")
+  reeferPlugs Int      @default(4) @map("reefer_plugs")
+  status      String   @default("ACTIVE")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  tenant     Tenant                        @relation(fields: [tenantId], references: [id])
+  slots      YardSlot[]
+  gateEvents ContainerGateEvent[]
+  eirs       EquipmentInterchangeReceipt[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("yards")
+}
+
+model YardSlot {
+  id           String   @id @default(uuid())
+  tenantId     String   @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  yardId       String   @map("yard_id")
+  block        String
+  rowNo        Int      @map("row_no")
+  bayNo        Int      @map("bay_no")
+  tierNo       Int      @default(1) @map("tier_no")
+  slotCode     String   @map("slot_code")
+  isReeferSlot Boolean  @default(false) @map("is_reefer_slot")
+  status       String   @default("EMPTY") // EMPTY | OCCUPIED | RESERVED | MAINTENANCE
+  containerId  String?  @map("container_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  tenant     Tenant              @relation(fields: [tenantId], references: [id])
+  yard       Yard                @relation(fields: [yardId], references: [id], onDelete: Cascade)
+  container  ContainerEquipment? @relation(fields: [containerId], references: [id], onDelete: SetNull)
+  gateEvents ContainerGateEvent[]
+
+  @@unique([yardId, slotCode])
+  @@index([tenantId, status])
+  @@map("yard_slots")
+}
+
+model ContainerGateEvent {
+  id            String   @id @default(uuid())
+  tenantId      String   @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  yardId        String   @map("yard_id")
+  yardSlotId    String?  @map("yard_slot_id")
+  containerId   String   @map("container_id")
+  tractorId     String?  @map("tractor_id")
+  chassisId     String?  @map("chassis_id")
+  bookingId     String?  @map("booking_id")
+  eventType     String   @map("event_type") // GATE_IN | GATE_OUT
+  loadState     String   @default("EMPTY") @map("load_state") // FULL | EMPTY
+  sealNo        String?  @map("seal_no")
+  grossWeightKg Decimal? @map("gross_weight_kg")
+  occurredAt    DateTime @default(now()) @map("occurred_at")
+  operatorId    String?  @map("operator_id")
+  notes         String?
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  tenant    Tenant                        @relation(fields: [tenantId], references: [id])
+  yard      Yard                          @relation(fields: [yardId], references: [id], onDelete: Cascade)
+  yardSlot  YardSlot?                     @relation(fields: [yardSlotId], references: [id], onDelete: SetNull)
+  container ContainerEquipment            @relation(fields: [containerId], references: [id], onDelete: Cascade)
+  tractor   TractorUnit?                  @relation(fields: [tractorId], references: [id], onDelete: SetNull)
+  chassis   ChassisUnit?                  @relation(fields: [chassisId], references: [id], onDelete: SetNull)
+  eir       EquipmentInterchangeReceipt?
+
+  @@index([tenantId, occurredAt])
+  @@index([containerId])
+  @@map("container_gate_events")
+}
+
+model EquipmentInterchangeReceipt {
+  id            String   @id @default(uuid())
+  tenantId      String   @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  eirNumber     String   @map("eir_number")
+  gateEventId   String?  @unique @map("gate_event_id")
+  yardId        String   @map("yard_id")
+  containerId   String   @map("container_id")
+  tractorId     String?  @map("tractor_id")
+  chassisId     String?  @map("chassis_id")
+  direction     String   // IN | OUT
+  loadState     String   @default("EMPTY") @map("load_state") // FULL | EMPTY
+  sealNo        String?  @map("seal_no")
+  condition     String   @default("GOOD") // GOOD | MINOR_DENT | DAMAGED
+  damageNotes   String?  @map("damage_notes")
+  driverName    String?  @map("driver_name")
+  inspectorName String?  @map("inspector_name")
+  issuedAt      DateTime @default(now()) @map("issued_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  tenant    Tenant              @relation(fields: [tenantId], references: [id])
+  gateEvent ContainerGateEvent? @relation(fields: [gateEventId], references: [id], onDelete: SetNull)
+  yard      Yard                @relation(fields: [yardId], references: [id], onDelete: Cascade)
+  container ContainerEquipment  @relation(fields: [containerId], references: [id], onDelete: Cascade)
+  tractor   TractorUnit?        @relation(fields: [tractorId], references: [id], onDelete: SetNull)
+  chassis   ChassisUnit?        @relation(fields: [chassisId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, eirNumber])
+  @@index([tenantId, issuedAt])
+  @@map("equipment_interchange_receipts")
+}
+
+// ----------------------- Commercial, Freight, Pricing, DEM/DET, AR/AP & Disputes -----------------------
+model ContractRate {
+  id            String   @id @default(uuid())
+  tenantId      String   @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  clientId      String?  @map("client_id")
+  contractCode  String   @map("contract_code")
+  originName    String   @map("origin_name")
+  destName      String   @map("dest_name")
+  corridorTag   String?  @map("corridor_tag")
+  serviceMode   String   @default("FCL") @map("service_mode") // FCL | LCL | FTL
+  containerSize String   @default("40HC") @map("container_size")
+  currency      String   @default("VND")
+  baseRate      Decimal  @map("base_rate")
+  validFrom     DateTime @map("valid_from")
+  validTo       DateTime @map("valid_to")
+  status        String   @default("ACTIVE") // ACTIVE | EXPIRED | DRAFT
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  tenant         Tenant          @relation(fields: [tenantId], references: [id])
+  client         Client?         @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  surcharges     SurchargeRule[]
+  freightQuotes  FreightQuote[]
+
+  @@unique([tenantId, contractCode])
+  @@index([tenantId, status])
+  @@map("contract_rates")
+}
+
+model SurchargeRule {
+  id             String   @id @default(uuid())
+  tenantId       String   @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  contractRateId String?  @map("contract_rate_id")
+  code           String
+  name           String
+  surchargeType  String   @map("surcharge_type") // FUEL | TOLL | REEFER_PLUG | OVERTIME | HOLIDAY
+  calcMode       String   @default("FIXED") @map("calc_mode") // FIXED | PERCENT
+  amount         Decimal
+  currency       String   @default("VND")
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id])
+  contractRate ContractRate? @relation(fields: [contractRateId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@map("surcharge_rules")
+}
+
+model DemDetRule {
+  id              String   @id @default(uuid())
+  tenantId        String   @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  carrierCode     String   @map("carrier_code")
+  chargeType      String   @map("charge_type") // DEMURRAGE | DETENTION
+  containerSize   String   @default("40HC") @map("container_size")
+  freeDays        Int      @default(5) @map("free_days")
+  excludeWeekends Boolean  @default(false) @map("exclude_weekends")
+  excludeHolidays Boolean  @default(false) @map("exclude_holidays")
+  currency        String   @default("VND")
+  dailyRateTier1  Decimal  @map("daily_rate_tier1")
+  tier1Days       Int      @default(5) @map("tier1_days")
+  dailyRateTier2  Decimal  @map("daily_rate_tier2")
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  tenant       Tenant            @relation(fields: [tenantId], references: [id])
+  demShipments FreightShipment[] @relation("ShipmentDemRule")
+  detShipments FreightShipment[] @relation("ShipmentDetRule")
+
+  @@index([tenantId, chargeType])
+  @@map("dem_det_rules")
+}
+
+model FreightRFQ {
+  id           String    @id @default(uuid())
+  tenantId     String    @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  clientId     String?   @map("client_id")
+  rfqNumber    String    @map("rfq_number")
+  serviceMode  String    @default("FCL_EXPORT") @map("service_mode") // FCL_IMPORT | FCL_EXPORT | LCL | DOMESTIC_FTL
+  incoterm     String    @default("FOB")
+  originName   String    @map("origin_name")
+  destName     String    @map("dest_name")
+  corridorTag  String?   @map("corridor_tag")
+  containerSize String?  @map("container_size")
+  containerQty Int       @default(1) @map("container_qty")
+  cargoDesc    String    @map("cargo_desc")
+  weightKg     Decimal?  @map("weight_kg")
+  volumeCbm    Decimal?  @map("volume_cbm")
+  requiredDate DateTime? @map("required_date")
+  status       String    @default("OPEN") // DRAFT | OPEN | QUOTED | BOOKED | CANCELLED
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  tenant Tenant         @relation(fields: [tenantId], references: [id])
+  client Client?        @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  quotes FreightQuote[]
+
+  @@unique([tenantId, rfqNumber])
+  @@index([tenantId, status])
+  @@index([clientId])
+  @@map("freight_rfqs")
+}
+
+model FreightQuote {
+  id             String    @id @default(uuid())
+  tenantId       String    @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  rfqId          String?   @map("rfq_id")
+  clientId       String?   @map("client_id")
+  quoteNumber    String    @map("quote_number")
+  contractRateId String?   @map("contract_rate_id")
+  currency       String    @default("VND")
+  totalAmount    Decimal   @map("total_amount")
+  validUntil     DateTime  @map("valid_until")
+  status         String    @default("SENT") // DRAFT | SENT | ACCEPTED | REJECTED | EXPIRED
+  acceptedAt     DateTime? @map("accepted_at")
+  rejectedReason String?   @map("rejected_reason")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  tenant       Tenant          @relation(fields: [tenantId], references: [id])
+  rfq          FreightRFQ?     @relation(fields: [rfqId], references: [id], onDelete: SetNull)
+  client       Client?         @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  contractRate ContractRate?   @relation(fields: [contractRateId], references: [id], onDelete: SetNull)
+  lines        QuoteLine[]
+  booking      FreightBooking?
+
+  @@unique([tenantId, quoteNumber])
+  @@index([tenantId, status])
+  @@index([clientId])
+  @@map("freight_quotes")
+}
+
+model QuoteLine {
+  id          String  @id @default(uuid())
+  tenantId    String  @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  quoteId     String  @map("quote_id")
+  lineType    String  @default("FREIGHT") // FREIGHT | SURCHARGE | CUSTOMS | HANDLING
+  description String
+  qty         Decimal @default(1)
+  unitPrice   Decimal @map("unit_price")
+  lineTotal   Decimal @map("line_total")
+
+  tenant Tenant       @relation(fields: [tenantId], references: [id])
+  quote  FreightQuote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+
+  @@index([quoteId])
+  @@index([tenantId])
+  @@map("quote_lines")
+}
+
+model FreightBooking {
+  id               String    @id @default(uuid())
+  tenantId         String    @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  bookingNo        String    @map("booking_no")
+  quoteId          String?   @unique @map("quote_id")
+  clientId         String?   @map("client_id")
+  serviceMode      String    @default("FCL_EXPORT") @map("service_mode")
+  vesselName       String?   @map("vessel_name")
+  voyageNo         String?   @map("voyage_no")
+  mblNo            String?   @map("mbl_no")
+  hblNo            String?   @map("hbl_no")
+  etd              DateTime?
+  eta              DateTime?
+  originFacilityId String?   @map("origin_facility_id")
+  destFacilityId   String?   @map("dest_facility_id")
+  status           String    @default("CONFIRMED")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  tenant         Tenant                @relation(fields: [tenantId], references: [id])
+  quote          FreightQuote?         @relation(fields: [quoteId], references: [id], onDelete: SetNull)
+  client         Client?               @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  originFacility LogisticsFacility?    @relation("BookingOriginFacility", fields: [originFacilityId], references: [id], onDelete: SetNull)
+  destFacility   LogisticsFacility?    @relation("BookingDestFacility", fields: [destFacilityId], references: [id], onDelete: SetNull)
+  shipments      FreightShipment[]
+  assignments    EquipmentAssignment[]
+  invoices       FreightInvoice[]
+  tradeDocs      TradeDocument[]
+  customsDecls    CustomsDeclaration[]
+
+  @@unique([tenantId, bookingNo])
+  @@index([tenantId, status])
+  @@index([clientId])
+  @@map("freight_bookings")
+}
+
+model FreightShipment {
+  id            String    @id @default(uuid())
+  tenantId      String    @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  shipmentNo    String    @map("shipment_no")
+  bookingId     String    @map("booking_id")
+  clientId      String?   @map("client_id")
+  containerId   String?   @map("container_id")
+  trackingCode  String    @unique @map("tracking_code")
+  cargoDesc     String?   @map("cargo_desc")
+  grossWeightKg Decimal?  @map("gross_weight_kg")
+  volumeCbm     Decimal?  @map("volume_cbm")
+  demRuleId     String?   @map("dem_rule_id")
+  detRuleId     String?   @map("det_rule_id")
+  dischargeAt   DateTime? @map("discharge_at")
+  gateOutFullAt DateTime? @map("gate_out_full_at")
+  emptyReturnAt DateTime? @map("empty_return_at")
+  status        String    @default("PLANNED")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  tenant      Tenant               @relation(fields: [tenantId], references: [id])
+  booking     FreightBooking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  client      Client?              @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  container   ContainerEquipment?  @relation(fields: [containerId], references: [id], onDelete: SetNull)
+  demRule     DemDetRule?          @relation("ShipmentDemRule", fields: [demRuleId], references: [id], onDelete: SetNull)
+  detRule     DemDetRule?          @relation("ShipmentDetRule", fields: [detRuleId], references: [id], onDelete: SetNull)
+  legs        FreightLeg[]
+  invoices    FreightInvoice[]
+  disputes    DisputeCase[]
+  tradeDocs   TradeDocument[]
+  customsDecls CustomsDeclaration[]
+
+  @@unique([tenantId, shipmentNo])
+  @@index([tenantId, status])
+  @@index([clientId])
+  @@index([bookingId])
+  @@map("freight_shipments")
+}
+
+model FreightLeg {
+  id           String    @id @default(uuid())
+  tenantId     String    @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  shipmentId   String    @map("shipment_id")
+  sequence     Int
+  legType      String    @map("leg_type")
+  originName   String    @map("origin_name")
+  destName     String    @map("dest_name")
+  originLat    Decimal?  @map("origin_lat")
+  originLng    Decimal?  @map("origin_lng")
+  destLat      Decimal?  @map("dest_lat")
+  destLng      Decimal?  @map("dest_lng")
+  plannedStart DateTime? @map("planned_start")
+  plannedEnd   DateTime? @map("planned_end")
+  actualStart  DateTime? @map("actual_start")
+  actualEnd    DateTime? @map("actual_end")
+  status       String    @default("PENDING")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  tenant      Tenant                @relation(fields: [tenantId], references: [id])
+  shipment    FreightShipment       @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  assignments EquipmentAssignment[]
+
+  @@unique([shipmentId, sequence])
+  @@index([tenantId, status])
+  @@map("freight_legs")
+}
+
+model FreightInvoice {
+  id          String    @id @default(uuid())
+  tenantId    String    @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  invoiceNo   String    @map("invoice_no")
+  clientId    String?   @map("client_id")
+  bookingId   String?   @map("booking_id")
+  shipmentId  String?   @map("shipment_id")
+  direction   String    @default("AR") // AR | AP
+  currency    String    @default("VND")
+  subtotal    Decimal
+  taxAmount   Decimal   @default(0) @map("tax_amount")
+  totalAmount Decimal   @map("total_amount")
+  paidAmount  Decimal   @default(0) @map("paid_amount")
+  status      String    @default("ISSUED") // DRAFT | ISSUED | PARTIAL | PAID | DISPUTED | VOID
+  dueAt       DateTime? @map("due_at")
+  issuedAt    DateTime? @default(now()) @map("issued_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  tenant        Tenant               @relation(fields: [tenantId], references: [id])
+  client        Client?              @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  booking       FreightBooking?      @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  shipment      FreightShipment?     @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
+  ledgerEntries FreightLedgerEntry[]
+  allocations   PaymentAllocation[]
+  disputes      DisputeCase[]
+
+  @@unique([tenantId, invoiceNo])
+  @@index([tenantId, direction, status])
+  @@index([clientId])
+  @@map("freight_invoices")
+}
+
+model FreightLedgerEntry {
+  id          String   @id @default(uuid())
+  tenantId    String   @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  invoiceId   String   @map("invoice_id")
+  entryType   String   @map("entry_type") // FREIGHT | DEMURRAGE | DETENTION | SURCHARGE | PAYMENT | CREDIT_NOTE
+  amount      Decimal
+  currency    String   @default("VND")
+  description String
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  tenant  Tenant         @relation(fields: [tenantId], references: [id])
+  invoice FreightInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, invoiceId])
+  @@map("freight_ledger_entries")
+}
+
+model PaymentAllocation {
+  id          String   @id @default(uuid())
+  tenantId    String   @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  invoiceId   String   @map("invoice_id")
+  amount      Decimal
+  reference   String
+  method      String   @default("BANK_TRANSFER")
+  allocatedBy String?  @map("allocated_by")
+  allocatedAt DateTime @default(now()) @map("allocated_at")
+  status      String   @default("POSTED") // POSTED | REVERSED
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  tenant  Tenant         @relation(fields: [tenantId], references: [id])
+  invoice FreightInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, invoiceId])
+  @@map("payment_allocations")
+}
+
+model DisputeCase {
+  id              String   @id @default(uuid())
+  tenantId        String   @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  disputeCode     String   @map("dispute_code")
+  invoiceId       String?  @map("invoice_id")
+  shipmentId      String?  @map("shipment_id")
+  clientId        String?  @map("client_id")
+  category        String   // DEM_DET | DAMAGE | SHORTAGE | BILLING_RATE | DELAY
+  claimedAmount   Decimal  @map("claimed_amount")
+  approvedAmount  Decimal? @map("approved_amount")
+  reason          String
+  resolutionNotes String?  @map("resolution_notes")
+  status          String   @default("OPEN") // OPEN | UNDER_REVIEW | RESOLVED_CREDIT | REJECTED
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  tenant   Tenant           @relation(fields: [tenantId], references: [id])
+  invoice  FreightInvoice?  @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  shipment FreightShipment? @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
+  client   Client?          @relation(fields: [clientId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, disputeCode])
+  @@index([tenantId, status])
+  @@map("dispute_cases")
+}
+
+// ----------------------- Trade / XNK & Customs Approval Gate -----------------------
+model TradeDocument {
+  id                String   @id @default(uuid())
+  tenantId          String   @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  bookingId         String?  @map("booking_id")
+  shipmentId        String?  @map("shipment_id")
+  clientId          String?  @map("client_id")
+  docType           String   @map("doc_type") // COMMERCIAL_INVOICE | PACKING_LIST | BILL_OF_LADING | CO | CUSTOMS_DEC
+  docNumber         String   @map("doc_number")
+  fileName          String   @map("file_name")
+  mimeType          String   @default("application/pdf") @map("mime_type")
+  fileSize          Int?     @map("file_size")
+  storageKey        String?  @map("storage_key")
+  sha256            String?
+  status            String   @default("UPLOADED") // UPLOADED | EXTRACTED | MISMATCH_FOUND | VERIFIED | REJECTED
+  extractionStatus  String   @default("PENDING") @map("extraction_status")
+  extractedJson     Json?    @map("extracted_json")
+  discrepanciesJson Json?    @map("discrepancies_json")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  tenant        Tenant                 @relation(fields: [tenantId], references: [id])
+  booking       FreightBooking?        @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  shipment      FreightShipment?       @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
+  client        Client?                @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  versions      TradeDocumentVersion[]
+  hsSuggestions HSCodeSuggestion[]
+
+  @@index([tenantId, docType, status])
+  @@index([bookingId])
+  @@index([clientId])
+  @@map("trade_documents")
+}
+
+model TradeDocumentVersion {
+  id            String   @id @default(uuid())
+  tenantId      String   @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  documentId    String   @map("document_id")
+  versionNo     Int      @map("version_no")
+  fileName      String   @map("file_name")
+  sha256        String?
+  extractedJson Json?    @map("extracted_json")
+  uploadedBy    String?  @map("uploaded_by")
+  note          String?
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  tenant   Tenant        @relation(fields: [tenantId], references: [id])
+  document TradeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, versionNo])
+  @@index([tenantId])
+  @@map("trade_document_versions")
+}
+
+model CustomsDeclaration {
+  id               String    @id @default(uuid())
+  tenantId         String    @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  declarationNo    String    @map("declaration_no")
+  bookingId        String?   @map("booking_id")
+  shipmentId       String?   @map("shipment_id")
+  direction        String    @default("EXPORT") // IMPORT | EXPORT
+  channel          String    @default("YELLOW") // GREEN | YELLOW | RED
+  portCode         String    @map("port_code")
+  hsReviewRequired Boolean   @default(true) @map("hs_review_required")
+  status           String    @default("NEEDS_CUSTOMS_REVIEW") // DRAFT | NEEDS_CUSTOMS_REVIEW | READY_TO_SUBMIT | SUBMITTED | INSPECTED | CLEARED | HOLD
+  submittedAt      DateTime? @map("submitted_at")
+  clearedAt        DateTime? @map("cleared_at")
+  notes            String?
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  tenant        Tenant               @relation(fields: [tenantId], references: [id])
+  booking       FreightBooking?      @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  shipment      FreightShipment?     @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
+  events        CustomsStatusEvent[]
+  hsSuggestions HSCodeSuggestion[]
+
+  @@unique([tenantId, declarationNo])
+  @@index([tenantId, status, channel])
+  @@map("customs_declarations")
+}
+
+model CustomsStatusEvent {
+  id            String   @id @default(uuid())
+  tenantId      String   @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  declarationId String   @map("declaration_id")
+  status        String
+  channel       String
+  message       String
+  actorId       String?  @map("actor_id")
+  occurredAt    DateTime @default(now()) @map("occurred_at")
+
+  tenant      Tenant             @relation(fields: [tenantId], references: [id])
+  declaration CustomsDeclaration @relation(fields: [declarationId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, declarationId])
+  @@map("customs_status_events")
+}
+
+model HSCodeSuggestion {
+  id              String    @id @default(uuid())
+  tenantId        String    @default(dbgenerated("public.app_current_tenant_id()")) @map("tenant_id")
+  declarationId   String?   @map("declaration_id")
+  documentId      String?   @map("document_id")
+  itemDescription String    @map("item_description")
+  suggestedHsCode String    @map("suggested_hs_code")
+  confidence      Decimal   @default(0.5)
+  advisoryOnly    Boolean   @default(true) @map("advisory_only")
+  status          String    @default("NEEDS_CUSTOMS_REVIEW") // NEEDS_CUSTOMS_REVIEW | APPROVED | REJECTED
+  approvedHsCode  String?   @map("approved_hs_code")
+  reviewedBy      String?   @map("reviewed_by")
+  reviewedAt      DateTime? @map("reviewed_at")
+  reviewNote      String?   @map("review_note")
+  sourceMethod    String    @default("rule_fallback") @map("source_method")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  tenant      Tenant              @relation(fields: [tenantId], references: [id])
+  declaration CustomsDeclaration? @relation(fields: [declarationId], references: [id], onDelete: SetNull)
+  document    TradeDocument?      @relation(fields: [documentId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, status])
+  @@index([declarationId])
+  @@map("hs_code_suggestions")
+}
+
+/// Platform-layer Demo Control Plane: stateful sandboxes, single-use cross-portal handoff tokens, and deterministic simulation ledger.
+model DemoSandbox {
+  id              String   @id @default(uuid())
+  sandboxKey      String   @unique @map("sandbox_key")
+  tenantId        String   @map("tenant_id")
+  tenantSlug      String   @map("tenant_slug")
+  activeScenario  String   @default("NORMAL_DAY") @map("active_scenario")
+  scenarioStatus  String   @default("ACTIVE") @map("scenario_status") // ACTIVE | PAUSED | COMPLETED
+  simSpeed        Float    @default(1) @map("sim_speed")
+  telemetryPaused Boolean  @default(false) @map("telemetry_paused")
+  networkSimMode  String   @default("NORMAL") @map("network_sim_mode") // NORMAL | TIMEOUT | RATE_LIMIT_429 | SERVER_500 | OFFLINE
+  stateJson       Json     @default("{}") @map("state_json")
+  expiresAt       DateTime @map("expires_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId])
+  @@index([expiresAt])
+  @@map("demo_sandboxes")
+}
+
+model DemoHandoffToken {
+  id         String    @id @default(uuid())
+  tokenHash  String    @unique @map("token_hash")
+  personaId  String    @map("persona_id")
+  sandboxKey String    @map("sandbox_key")
+  tenantId   String    @map("tenant_id")
+  tenantSlug String    @map("tenant_slug")
+  role       String
+  portal     String
+  userEmail  String    @map("user_email")
+  usedAt     DateTime? @map("used_at")
+  expiresAt  DateTime  @map("expires_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@index([expiresAt])
+  @@index([sandboxKey])
+  @@map("demo_handoff_tokens")
+}
+
+model DemoSimulationEvent {
+  id          String   @id @default(uuid())
+  sandboxKey  String   @map("sandbox_key")
+  tenantId    String?  @map("tenant_id")
+  category    String   // SCENARIO | GPS | PACK | DRIVER | FREIGHT | TRADE | BILLING | RETRAIN_SIM
+  eventType   String   @map("event_type")
+  summary     String
+  payloadJson Json     @default("{}") @map("payload_json")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([sandboxKey, createdAt])
+  @@index([tenantId])
+  @@map("demo_simulation_events")
 }

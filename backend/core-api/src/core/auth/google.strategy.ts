@@ -3,7 +3,6 @@ import { PassportStrategy } from '@nestjs/passport';
 import { Strategy as GooglePassportStrategy, VerifyCallback } from 'passport-google-oauth20';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
-import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class GoogleStrategy extends PassportStrategy(GooglePassportStrategy, 'google') {
@@ -27,49 +26,23 @@ export class GoogleStrategy extends PassportStrategy(GooglePassportStrategy, 'go
   }
 
   async validate(accessToken: string, refreshToken: string, profile: any, done: VerifyCallback): Promise<any> {
-    const { id, displayName, emails } = profile;
+    const { emails } = profile;
     const email = emails?.[0]?.value;
 
     if (!email) {
       return done(new UnauthorizedException('Google account does not have an email'), false);
     }
 
-    const isSqlite = (process.env.DATABASE_URL || '').startsWith('file:');
-
-    if (isSqlite) {
-      let user = await this.prisma.systemAdmin.findFirst({ where: { email } });
-
-      if (!user) {
-        const passwordHash = await bcrypt.hash(id + '_' + Date.now(), 10);
-        user = await this.prisma.systemAdmin.create({
-          data: {
-            email,
-            fullName: displayName || email.split('@')[0],
-            passwordHash,
-            status: 'ACTIVE',
-          },
-        });
-      }
-
-      const payload: any = {
-        sub: user.id,
-        email: user.email,
-        role: 'SUPER_ADMIN',
-        permissions: [],
-        schema_name: 'public',
-      };
-
-      return done(null, {
-        accessToken: this.jwtService.sign(payload),
-        refreshToken: this.jwtService.sign({ sub: user.id, type: 'refresh' }, { expiresIn: '7d' }),
-        email: user.email,
-        fullName: user.fullName,
-      });
+    const admin = await this.prisma.runAsPlatform<any>((db) =>
+      db.systemAdmin.findFirst({ where: { email: email.toLowerCase(), status: 'ACTIVE' } }),
+    );
+    if (!admin) {
+      return done(new UnauthorizedException('Google account is not authorized as an active SystemAdmin'), false);
     }
 
     const payload: any = {
-      sub: id,
-      email,
+      sub: admin.id,
+      email: admin.email,
       role: 'SUPER_ADMIN',
       permissions: [],
       schema_name: 'public',
@@ -77,9 +50,9 @@ export class GoogleStrategy extends PassportStrategy(GooglePassportStrategy, 'go
 
     return done(null, {
       accessToken: this.jwtService.sign(payload),
-      refreshToken: this.jwtService.sign({ sub: id, type: 'refresh' }, { expiresIn: '7d' }),
-      email,
-      fullName: displayName || email.split('@')[0],
+      refreshToken: this.jwtService.sign({ sub: admin.id, type: 'refresh' }, { expiresIn: '7d' }),
+      email: admin.email,
+      fullName: admin.fullName,
     });
   }
 }

@@ -13,3 +13,4 @@ export * from "./decorators/require-permissions.decorator";
 export * from "./decorators/require-roles.decorator";
 export * from "./decorators/exclude-roles.decorator";
 export * from "./config";
+export * from "./dong-nai-2026";

@@ -70,12 +70,30 @@ export class ClientReturnsController {
 
   @Post()
   @RequirePermissions(Permissions.ReturnsCreate)
-  async createReturnRequest(@Body() body: { orderId: string; reasonId?: string; reasonNote?: string; items: { productId: string; quantity: number }[] }, @Request() req: any) {
+  async createReturnRequest(
+    @Body()
+    body: {
+      orderId?: string;
+      orderTrackingCode?: string;
+      reasonId?: string;
+      reason?: string;
+      reasonNote?: string;
+      note?: string;
+      items?: { productId: string; quantity: number }[];
+    },
+    @Request() req: any,
+  ) {
     try {
       const clientId = await this.getClientId(req)
+      if (!body.orderId && !body.orderTrackingCode) {
+        throw new BadRequestException("orderId or orderTrackingCode is required")
+      }
 
-      const order = await this.prisma.getTenantDb().order.findFirst({
-        where: { id: body.orderId, clientId },
+      const db = this.prisma.getTenantDb()
+      const order = await db.order.findFirst({
+        where: body.orderId
+          ? { id: body.orderId, clientId }
+          : { trackingCode: String(body.orderTrackingCode).trim(), clientId },
         include: { items: true }
       })
       if (!order) throw new NotFoundException("Order not found")
@@ -83,7 +101,32 @@ export class ClientReturnsController {
         throw new BadRequestException(`Cannot create return for order with status ${order.status}`)
       }
 
-      if (!body.items || body.items.length === 0) {
+      let resolvedReasonId = body.reasonId
+      if (!resolvedReasonId && body.reason) {
+        const matchedReason = await db.returnReason.findFirst({
+          where: { code: String(body.reason).trim() },
+        })
+        resolvedReasonId = matchedReason?.id
+      }
+
+      const rawNote = body.reasonNote || body.note || ""
+      const resolvedNote =
+        !resolvedReasonId && body.reason
+          ? `[${String(body.reason).trim()}] ${rawNote}`.trim()
+          : rawNote || undefined
+
+      const requestedItems = Array.isArray(body.items)
+        ? body.items
+        : body.orderTrackingCode
+          ? (order.items || []).map((oi: any) => ({
+              productId: oi.productId,
+              quantity: Math.max(1, Number(oi.quantity || 1)),
+            }))
+          : []
+
+      // Enforce explicit items when callers provide orderId (preserving strict API validation),
+      // while allowing tracking-code portal submissions even if an order has no line items yet.
+      if (body.orderId && requestedItems.length === 0) {
         throw new BadRequestException("Return request must have at least one item")
       }
 
@@ -91,7 +134,7 @@ export class ClientReturnsController {
       for (const oi of order.items || []) {
         orderedByProduct.set(oi.productId, (orderedByProduct.get(oi.productId) || 0) + Number(oi.quantity || 0));
       }
-      for (const item of body.items) {
+      for (const item of requestedItems) {
         const qty = Number(item.quantity);
         if (!Number.isInteger(qty) || qty < 1) {
           throw new BadRequestException("Return item quantity must be a positive integer");
@@ -106,29 +149,37 @@ export class ClientReturnsController {
       const randomSuffix = Math.floor(Math.random() * 100000).toString().padStart(5, "0")
       const returnCode = `RMA-${dateStr}-${randomSuffix}`
 
-      return await this.prisma.getTenantDb().$transaction(async (tx: any) => {
+      return await db.$transaction(async (tx: any) => {
         const returnRequest = await tx.returnRequest.create({
           data: {
             returnCode,
-            orderId: body.orderId,
+            orderId: order.id,
             clientId,
-            reasonId: body.reasonId,
-            reasonNote: body.reasonNote,
+            reasonId: resolvedReasonId,
+            reasonNote: resolvedNote,
             status: "PENDING",
             returnType: "REFUND",
-            items: {
-              create: body.items.map((item: any) => ({
-                productId: item.productId,
-                quantityRequested: item.quantity,
-              }))
-            }
+            ...(requestedItems.length > 0
+              ? {
+                  items: {
+                    create: requestedItems.map((item: any) => ({
+                      productId: item.productId,
+                      quantityRequested: item.quantity,
+                    })),
+                  },
+                }
+              : {}),
           },
-          include: { items: true }
+          include: {
+            order: { select: { trackingCode: true, recipientName: true } },
+            reason: true,
+            items: true,
+          }
         })
 
         await tx.orderTrackingEvent.create({
           data: {
-            orderId: body.orderId,
+            orderId: order.id,
             status: "RETURN_REQUESTED",
             description: `Return request ${returnCode} created by client`
           }

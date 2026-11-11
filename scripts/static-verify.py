@@ -27,6 +27,10 @@ EXPECTED_TESTS = [
     "api/api-gateway/src/config/services.config.spec.ts",
     "api/api-gateway/src/controllers/health.controller.spec.ts",
     "api/api-gateway/src/guards/jwt.gateway.guard.spec.ts",
+    "backend/core-api/src/modules/freight/__tests__/dem-det-equipment.spec.ts",
+    "backend/core-api/src/modules/freight/__tests__/freight-trade-geo.spec.ts",
+    "backend/core-api/src/modules/iam/__tests__/idempotency.spec.ts",
+    "backend/core-api/src/modules/iam/__tests__/outbox-dispatcher.spec.ts",
     "backend/core-api/src/modules/iam/__tests__/rbac-boundary.spec.ts",
     "backend/core-api/src/modules/iam/__tests__/tenant-isolation.spec.ts",
     "backend/core-api/src/modules/logistics/__tests__/cod-reconcile.spec.ts",
@@ -36,6 +40,7 @@ EXPECTED_TESTS = [
     "packages/prisma-schemas/prisma/tests/tenant-isolation.sql",
     "packages/wms-engine/src/index.spec.ts",
     "workers/ai-worker/tests/compute.test.ts",
+    "workers/ai-worker/tests/enterprise.test.ts",
     "workers/ai-worker/tests/journey.test.ts",
     "workers/ai-worker/tests/llm.test.ts",
     "workers/ai-worker/tests/vrp.test.ts",
@@ -90,6 +95,12 @@ INTERNAL_CLIENT_EXCLUDED_CONTROLLERS = {
     "wms/warehouses/branches.controller.ts",
     "wms/warehouses/warehouses.controller.ts",
     "wms/waves/waves.controller.ts",
+    "geography/controllers/geography.controller.ts",
+    "geography/controllers/geography-admin.controller.ts",
+    "freight/controllers/freight.controller.ts",
+    "yard/controllers/yard.controller.ts",
+    "pricing/controllers/pricing.controller.ts",
+    "trade/controllers/trade.controller.ts",
 }
 
 REQUIRED_DOCS = [

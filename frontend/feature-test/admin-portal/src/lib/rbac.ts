@@ -44,6 +44,7 @@ export const PAGE_PERMISSIONS: Record<string, AdminRole[]> = {
     'DRIVER',
   ],
   '/admin/tenants': ['SUPER_ADMIN', 'TENANT_ADMIN'],
+  '/admin/geography': ['SUPER_ADMIN'],
   '/admin/billing': ['SUPER_ADMIN', 'TENANT_ADMIN'],
   '/admin/audit-logs': ['SUPER_ADMIN', 'TENANT_ADMIN'],
   '/admin/ai-models': ['SUPER_ADMIN', 'WAREHOUSE_MANAGER', 'LOGISTICS_MANAGER'],

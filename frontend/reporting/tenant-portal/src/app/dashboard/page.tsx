@@ -724,8 +724,9 @@ export default function DashboardPage() {
         </EditorialSection>
       ) : null}
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_280px]">
+      <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_280px]">
         <EditorialSection
+          className="min-w-0"
           eyebrow="Hàng đợi"
           title="Việc cần xử lý trong ca"
           action={
@@ -801,7 +802,7 @@ export default function DashboardPage() {
           ) : null}
         </EditorialSection>
 
-        <aside className="space-y-5 border-t border-line pt-4 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
+        <aside className="min-w-0 space-y-5 border-t border-line pt-4 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
               Ghi chú ca

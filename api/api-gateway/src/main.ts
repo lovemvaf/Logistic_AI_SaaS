@@ -3,6 +3,7 @@ import { NestFactory } from '@nestjs/core';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { json, urlencoded } from 'express';
+import helmet from 'helmet';
 import * as Sentry from '@sentry/node';
 import { AppModule } from './app.module';
 import { RequestLoggingInterceptor } from './interceptors/request-logging.interceptor';
@@ -31,6 +32,8 @@ async function bootstrap() {
   SwaggerModule.setup('api/docs', app, document);
   logger.log('Swagger documentation available at /api/docs');
 
+  app.use(helmet());
+
   app.enableCors({
     origin: process.env.CORS_ORIGINS?.split(',') || [
       'http://localhost:4001',
@@ -43,7 +46,19 @@ async function bootstrap() {
       'http://localhost:7863',
     ],
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Tenant-Id', 'X-User-Id', 'X-Request-Id', 'x-tenant-slug', 'x-portal', 'x-api-key', 'x-ai-api-key'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Tenant-Id',
+      'X-User-Id',
+      'X-Request-Id',
+      'X-Sync-Id',
+      'Idempotency-Key',
+      'x-tenant-slug',
+      'x-portal',
+      'x-api-key',
+      'x-ai-api-key',
+    ],
     credentials: true,
   });
 

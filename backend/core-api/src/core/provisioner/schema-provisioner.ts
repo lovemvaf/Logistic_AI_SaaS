@@ -25,6 +25,19 @@ const PLATFORM_TABLES = [
   'invoice_line_items',
   'payment_transactions',
   'notification_templates',
+  'administrative_units',
+  'administrative_aliases',
+  'administrative_boundary_versions',
+  'logistics_facilities',
+  'facility_geofences',
+  'transport_corridors',
+  'road_restrictions',
+  'terminal_queue_observations',
+  'outbox_events',
+  'event_consumption_ledger',
+  'api_idempotency_records',
+  'webhook_deliveries',
+  'public_tracking_grants',
 ];
 
 export class SchemaProvisioner {
@@ -81,17 +94,25 @@ export class SchemaProvisioner {
       );
 
       const isPlatformStatement = (statement: string) =>
-        PLATFORM_TABLES.some((table) => statement.includes(`"${table}"`));
+        PLATFORM_TABLES.some((table) => {
+          const re = new RegExp(
+            `(?:CREATE TABLE|CREATE (?:UNIQUE )?INDEX [^\\n]* ON|ALTER TABLE)\\s+(?:"public"\\.)?"${table}"`,
+          );
+          return re.test(statement);
+        });
 
       const statements = stdout
         .split(';')
         .map((s) => s.trim())
         .filter((s) => s.length > 0)
         .filter((s) => !isPlatformStatement(s))
-        // Only schema-qualified table references are rewritten. The tenant
-        // helper function keeps its `public.` qualifier on purpose: it lives
-        // in the shared schema and is shared by every tenant schema.
-        .map((s) => s.replace(/"public"\."/g, `"${dbSchemaName}"."`))
+        // Rewrite only tenant-owned table qualifiers (`"public"."<table>"` -> `"${dbSchemaName}"."<table>"`),
+        // keeping global/platform shared tables (e.g. `admin_units`, `logistics_facilities`) in `"public"`.
+        .map((s) =>
+          s.replace(/"public"\."([^"]+)"/g, (full, tbl) =>
+            PLATFORM_TABLES.includes(tbl) ? full : `"${dbSchemaName}"."${tbl}"`,
+          ),
+        )
         .map((s) => {
           // Partition the tracking log by timestamp. The primary key already
           // includes `timestamp`, which PostgreSQL requires for partitioned

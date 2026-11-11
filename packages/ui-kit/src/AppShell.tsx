@@ -1,6 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
+import { DemoModeBanner } from './DemoModeBanner';
 
 export type AppShellProps = {
   sidebar: ReactNode;
@@ -41,6 +42,7 @@ export function AppShell({
       {sidebar}
 
       <div className="flex min-h-[100dvh] flex-col lg:pl-52">
+        <DemoModeBanner />
         {topbar}
 
         <main id="main-content" className="flex-1">

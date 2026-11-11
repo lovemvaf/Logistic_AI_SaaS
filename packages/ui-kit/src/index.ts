@@ -1,4 +1,6 @@
 export * from './AppShell';
+export * from './DemoControlCenter';
+export * from './DemoModeBanner';
 export * from './Sidebar';
 export * from './Topbar';
 export * from './editorial';

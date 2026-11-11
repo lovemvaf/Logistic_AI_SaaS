@@ -1,8 +1,8 @@
 # Thẻ Mô hình AI, Heuristic & Quy trình Đánh giá Pilot (AI Model & Evaluation Cards)
 
-Tài liệu công bố trung thực thuật toán, dữ liệu đầu vào, cơ chế fallback, phạm vi áp dụng và bộ chỉ số chưa đo lường (`unmeasured`) của toàn bộ tính năng AI/CV/tối ưu trong SmartLogi AI SaaS.
+Tài liệu công bố trung thực thuật toán, dữ liệu đầu vào, cơ chế fallback, phạm vi áp dụng và bộ chỉ số chưa đo lường (`unmeasured`) của toàn bộ tính năng AI/CV/tối ưu & hỗ trợ XNK trong SmartLogi AI SaaS.
 
-> **Nguyên tắc minh bạch học thuật & kỹ thuật**: Tuyệt đối không dùng thông số giả lập trong `local-store` hay mô hình ý tưởng cũ (Python Google OR-Tools, `RandomForestRegressor`, `IsolationForest`) làm năng lực hiện có của bản phát hành này.
+> **Nguyên tắc minh bạch học thuật & kỹ thuật**: Tuyệt đối không dùng thông số giả lập trong `local-store` hay mô hình ý tưởng cũ (Python Google OR-Tools, `RandomForestRegressor`, `IsolationForest`, tự động nộp tờ khai hải quan không qua người duyệt) làm năng lực sản xuất tự động của bản phát hành này.
 
 ---
 
@@ -10,10 +10,13 @@ Tài liệu công bố trung thực thuật toán, dữ liệu đầu vào, cơ 
 
 | Thành phần | Vị trí mã nguồn | Kỹ thuật thực tế chạy trong code | Nguồn Fallback | Trạng thái đánh giá thực nghiệm |
 |---|---|---|---|---|
-| **Tối ưu tuyến VRP** | [`workers/ai-worker/src/lib/vrp.ts`](../workers/ai-worker/src/lib/vrp.ts) | Heuristic Nearest-Neighbor có ràng buộc tải trọng + cải thiện cục bộ `2-opt`; ma trận khoảng cách đối xứng `haversine * 1.41` | Báo rõ `unassigned` kèm lý do tải trọng | Chưa benchmark thực địa / chưa đối chiếu OR-Tools trên dữ liệu kho thật |
-| **Chat / Tóm tắt / Dự báo nhu cầu, giao hàng & rời bỏ** | [`workers/ai-worker/src/routes/compute.ts`](../workers/ai-worker/src/routes/compute.ts), [`llm.ts`](../workers/ai-worker/src/lib/llm.ts) | Cloudflare Workers AI (`@cf/meta/llama-3.1-8b-instruct-fast` hoặc `CLOUDFLARE_MODEL`) / OpenAI (`gpt-4o-mini`) + chống prompt-injection `wrapUntrustedData` | Công thức tất định (`fallbackDemand`, `fallbackDelivery`, `fallbackChurnProbability`, `fallbackAnalyze`, `ruleBasedFallback`) | `evaluation_status: "unmeasured"` (trả trực tiếp trong JSON) |
+| **Tối ưu tuyến VRP kiện lẻ** | [`workers/ai-worker/src/lib/vrp.ts`](../workers/ai-worker/src/lib/vrp.ts) | Heuristic Nearest-Neighbor có ràng buộc tải trọng + cải thiện cục bộ `2-opt`; ma trận khoảng cách `haversine * 1.41` | Báo rõ `unassigned` kèm lý do tải trọng | Chưa đối chiếu OR-Tools trên dữ liệu đơn giao thực địa (`[CHƯA ĐO PILOT]`) |
+| **Điều phối Container Drayage** | [`workers/ai-worker/src/lib/container-routing.ts`](../workers/ai-worker/src/lib/container-routing.ts) | Heuristic ghép cặp thời gian mở/đóng cửa sổ + thưởng hồi rỗng (`backhaulPairedCount`), kiểm kích thước container (`20GP/40GP/40HC/40RF/45HC`), reefer & tải trọng | Báo rõ mã lỗi `UNSUPPORTED_CONTAINER_SIZE`, `NO_REEFER_GENSET_TRACTOR`, `TIME_WINDOW_OR_CAPACITY_INFEASIBLE` | Benchmark 5 kịch bản TP Đồng Nai tổng hợp ([`benchmark-dongnai.ts`](../workers/ai-worker/tests/benchmark-dongnai.ts)); trả **`evaluation_status: "unmeasured_heuristic"`** |
+| **Trích xuất & Đối chiếu Chứng từ XNK** | [`workers/ai-worker/src/routes/trade-documents.ts`](../workers/ai-worker/src/routes/trade-documents.ts) | LLM JSON extraction (`wrapUntrustedData`) + đối chiếu trọng lượng/số kiện/tiền tệ giữa CI, PL & B/L | Fallback regex tất định (`deterministic_regex_fallback`); **từ chối HTTP `422 FAILED_PASSWORD_PROTECTED` nếu PDF đặt mật khẩu** | Đã test unit (`enterprise.test.ts`); chưa benchmark độ chính xác OCR/LLM trên bộ hồ sơ hải quan thực (`[CHƯA ĐO PILOT]`) |
+| **Gợi ý Mã HS Hải quan (Advisory)** | [`workers/ai-worker/src/routes/hs-code.ts`](../workers/ai-worker/src/routes/hs-code.ts) | LLM top-K gợi ý HS 8 số kèm confidence & rationale + cờ **`advisoryOnly: true`** | `suggestHsDeterministic` tra từ khóa thuế quan; luôn khóa ở trạng thái **`NEEDS_CUSTOMS_REVIEW`** | Không tự nộp hải quan; **bắt buộc chuyên viên có quyền `trade:approve` duyệt tay** |
+| **Chat / Tóm tắt / Dự báo nhu cầu, ETA & Churn** | [`workers/ai-worker/src/routes/compute.ts`](../workers/ai-worker/src/routes/compute.ts), [`llm.ts`](../workers/ai-worker/src/lib/llm.ts) | Cloudflare Workers AI (`@cf/meta/llama-3.1-8b-instruct-fast` hoặc `CLOUDFLARE_MODEL`) / OpenAI (`gpt-4o-mini`) + `wrapUntrustedData` | Công thức tất định (`fallbackDemand`, `fallbackDelivery`, `fallbackChurnProbability`, `fallbackAnalyze`, `ruleBasedFallback`) | `evaluation_status: "unmeasured"` (trả trực tiếp trong JSON) |
 | **Phát hiện bất thường** | [`workers/ai-worker/src/routes/compute.ts`](../workers/ai-worker/src/routes/compute.ts) | Z-score mẫu (sample stddev, ngưỡng `\|z\| > 3`) trên các cột số | Không gọi LLM; gắn `data_sufficiency: "insufficient_sample"` nếu `< 5` mẫu | Chưa hiệu chuẩn ngưỡng FPR/FNR theo bộ dữ liệu thực tế |
-| **Thị giác trạm đóng gói (Pack Station)** | [`pack-station-web/src/app/pack/page.tsx`](../frontend/reporting/pack-station-web/src/app/pack/page.tsx), [`cv-mapper.ts`](../frontend/reporting/pack-station-web/src/lib/cv-mapper.ts) | `@tensorflow/tfjs` + `@tensorflow-models/mobilenet` (ImageNet mặc định) chạy trên stream `videoRef` mỗi `1.5s`, ánh xạ 12 SKU bằng từ khóa, ngưỡng `CV_CONFIDENCE_THRESHOLD = 0.6` | Quét Web Serial Barcode hoặc nhập tay; **bắt buộc xác nhận người vận hành trước khi đóng kiện** | Chưa fine-tune cho SKU kho riêng; độ chính xác ImageNet trên bao bì/hộp kín chưa kiểm chứng |
+| **Thị giác trạm đóng gói (Pack Station)** | [`pack-station-web/src/app/pack/page.tsx`](../frontend/reporting/pack-station-web/src/app/pack/page.tsx), [`cv-mapper.ts`](../frontend/reporting/pack-station-web/src/lib/cv-mapper.ts) | `@tensorflow/tfjs` + `@tensorflow-models/mobilenet` (ImageNet mặc định) chạy trên `videoRef` mỗi `1.5s`, ánh xạ 12 SKU, ngưỡng `CV_CONFIDENCE_THRESHOLD = 0.6` | Quét Web Serial Barcode hoặc nhập tay; **bắt buộc xác nhận người vận hành trước khi đóng kiện** | Chưa fine-tune cho SKU kho riêng; độ chính xác ImageNet trên bao bì/hộp kín chưa kiểm chứng |
 | **Cơ chế học lại (Retraining)** | [`workers/ai-worker/src/routes/admin.ts`](../workers/ai-worker/src/routes/admin.ts) | Xuất nhãn đã được con người sửa (`human_corrected IS NOT NULL`) qua `GET /v1/training-dataset` | `POST /v1/train/:type` trả HTTP **`501 TRAINING_NOT_IMPLEMENTED`** | Không có pipeline tự huấn luyện trực tuyến trên Worker |
 | **Rust API AI (`backend/rust-api`)** | [`backend/rust-api/crates/api/src/routes/ai.rs`](../backend/rust-api/crates/api/src/routes/ai.rs) | Bộ sinh kết quả giả lập tất định phục vụ thử nghiệm port Axum | Trả trực tiếp dữ liệu tổng hợp | **Experimental / Non-production** |
 
@@ -23,52 +26,38 @@ Tài liệu công bố trung thực thuật toán, dữ liệu đầu vào, cơ 
 
 ### Card 1 — Bộ giải tuyến VRP (`solveRouting` — TS Heuristic)
 - **Tệp nguồn**: [`workers/ai-worker/src/lib/vrp.ts`](../workers/ai-worker/src/lib/vrp.ts) & [`backend/core-api/src/modules/logistics/processors/routing.processor.ts`](../backend/core-api/src/modules/logistics/processors/routing.processor.ts).
-- **Đầu vào thực tế**: Danh sách `locations` (`id`, `lat`, `lng`, `demand` được `LogisticsService` cộng dồn từ tổng khối lượng `OrderItem` hoặc số đơn thay vì hardcode `1`), `vehicles` (`id`, `capacity > 0`), `depotIndex`.
-- **Thuật toán**:
-  1. Dựng ma trận khoảng cách đối xứng bằng `Math.floor(haversine(a, b) * 1.41)` (`distance_source: "haversine_circuity_1.41"`).
-  2. Xây tuyến tham lam theo láng giềng gần nhất thỏa mãn `load + demand <= capacity`.
-  3. Đóng vòng quay về depot, chạy cải thiện cục bộ `2-opt`, bỏ depot lặp ở cuối nhưng giữ nguyên ít nhất độ dài `>= 2` để **chuyến 1 khách hàng không bị rớt mất**, đồng thời tính `stops = route.length - 1`.
-- **Giới hạn đã biết**:
-  - Không tính đường một chiều, cấm tải theo khung giờ cao điểm (TP.HCM/Hà Nội), giao thông thực tế hay khung giờ giao hẹn (VRPTW).
-  - Tham lam + `2-opt` là heuristic; khi một số điểm rơi vào `unassigned` (`NO_AVAILABLE_VEHICLES`, `EXCEEDS_MAX_VEHICLE_CAPACITY`, `INSUFFICIENT_FLEET_CAPACITY`), điều đó phản ánh lời giải tham lam không gán hết chứ chưa chứng minh vô nghiệm theo nghĩa tối ưu tổ hợp chính xác (MILP).
-- **Kiểm thử hiện có**: `workers/ai-worker/tests/vrp.test.ts` (**PASSED** trong GitHub Actions CI Run `43023689371` / job `ai-worker`; đối chiếu chất lượng tuyến thực tế với OR-Tools vẫn `[CHƯA ĐO PILOT]`).
+- **Đầu vào thực tế**: Danh sách `locations` (`id`, `lat`, `lng`, `demand` được `LogisticsService` cộng dồn từ tổng khối lượng `OrderItem`), `vehicles` (`id`, `capacity > 0`), `depotIndex`.
+- **Thuật toán**: Ma trận `Math.floor(haversine(a, b) * 1.41)` (`distance_source: "haversine_circuity_1.41"`), tham lam nearest-neighbor + `2-opt`, giữ `route.length >= 2` cho chuyến 1 khách, `stops = route.length - 1`.
+- **Giới hạn đã biết**: Không tính đường một chiều, cấm tải theo giờ hoặc lưu lượng giao thông thực; kiểm thử qua `workers/ai-worker/tests/vrp.test.ts` (`[CI] PASSED`), benchmark thực địa `[CHƯA ĐO PILOT]`.
 
-### Card 2 — Trợ lý LLM & Dự báo/Phân tích Fallback (`compute.ts`, `llm.ts`)
-- **Mô hình LLM cấu hình**: Mặc định `@cf/meta/llama-3.1-8b-instruct-fast` qua Cloudflare Workers `AI` binding (hoặc `CLOUDFLARE_MODEL`, dự phòng `OPENAI_API_KEY` dùng `gpt-4o-mini`), đệm KV `6` phút.
-- **Bảo vệ Prompt Injection**: Mọi ghi chú đơn hàng, ngữ cảnh chat, payload đầu vào đều đi qua [`wrapUntrustedData`](../workers/ai-worker/src/lib/llm.ts) kèm chỉ thị hệ thống `UNTRUSTED_DATA_GUARD`.
-- **Công thức Deterministic Fallback (khi LLM lỗi hoặc chưa cấp binding)**:
-  - **Demand**: `base * 12.5 * dowFactor * hourFactor` (không phải chuỗi thời gian theo từng SKU/kho).
-  - **Delivery Time**: `40 * weekendFactor * hourFactor` phút.
-  - **Churn Probability**: Hàm logistic `1 / (1 + exp(-(days/15 - 4 + log(orders+1)/2)))`.
-- **Minh bạch đầu ra**: Mọi endpoint đều trả `method` (`llm_cf_or_openai` hoặc `deterministic_heuristic_fallback`), `fallback_used` (`boolean`) và `evaluation_status: "unmeasured"`.
+### Card 2 — Bộ giải Container Drayage (`solveContainerDrayage`)
+- **Tệp nguồn**: [`workers/ai-worker/src/lib/container-routing.ts`](../workers/ai-worker/src/lib/container-routing.ts) (`POST /v1/routing/containers`).
+- **Ràng buộc nghiệp vụ**: Kiểm tra tương thích `supportedSizes`, cờ cấp lạnh `supportsReefer` cho cont `40RF`, tổng tải `maxGrossKg`, cửa sổ thời gian `[earliestMinute, latestMinute]` và điểm thưởng ghép chặng có hàng ngay sau hạ hàng / trả rỗng (`backhaulPairedCount`).
+- **Tính minh bạch**: Đầu ra trả tường minh `method: "heuristic_timewindow_backhaul_v1"`, `distance_source: "haversine_circuity_1.41"`, `evaluation_status: "unmeasured_heuristic"`. Không sử dụng giá trị `emptyMilesRatioPct` trên dữ liệu tổng hợp để tuyên bố tiết kiệm chi phí thực.
 
-### Card 3 — Phát hiện Bất thường Z-Score (`detectAnomalies`)
-- **Thuật toán**: Với từng cột số hợp lệ trong mảng bản ghi, tính trung bình mẫu và độ lệch chuẩn mẫu ($N - 1$ bậc tự do). Điểm nào có $|z| > 3$ được đánh dấu `is_anomaly: true`.
-- **Điều kiện mẫu**: Trả kèm `min_recommended_samples: 5` và cờ `data_sufficiency` (`sufficient` vs `insufficient_sample`) nhằm cảnh báo khi số quan sát quá nhỏ.
+### Card 3 — Trợ lý LLM, Trích xuất Chứng từ XNK & HS Code Advisory
+- **Tệp nguồn**: [`workers/ai-worker/src/routes/compute.ts`](../workers/ai-worker/src/routes/compute.ts), [`trade-documents.ts`](../workers/ai-worker/src/routes/trade-documents.ts), [`hs-code.ts`](../workers/ai-worker/src/routes/hs-code.ts), [`llm.ts`](../workers/ai-worker/src/lib/llm.ts).
+- **Chống Prompt Injection**: Mọi ghi chú đơn hàng, mô tả hàng hóa và text chứng từ XNK đi qua [`wrapUntrustedData`](../workers/ai-worker/src/lib/llm.ts) kèm `UNTRUSTED_DATA_GUARD`.
+- **Fail-Closed & Human-in-the-Loop**:
+  - Chứng từ XNK mã hóa mật khẩu (`isEncrypted` hoặc `/%PDF.*Encrypt/i`) -> trả ngay **`HTTP 422` (`FAILED_PASSWORD_PROTECTED`)** kèm `requires_manual_upload: true`.
+  - Gợi ý mã HS luôn gắn **`advisoryOnly: true`**, **`requiresHumanReview: true`**, **`status: "NEEDS_CUSTOMS_REVIEW"`**; chỉ khi chuyên viên hải quan duyệt qua `POST /api/v1/trade/hs-suggestions/:id/review` (quyền `trade:approve`) mới lưu mã duyệt chính thức.
 
-### Card 4 — Nhận diện Hỗ trợ tại Trạm Đóng gói (MobileNet v2 ImageNet + HITL)
-- **Kiến trúc thực thi**: Chạy hoàn toàn phía trình duyệt (WASM/WebGL) bằng `@tensorflow/tfjs` và `@tensorflow-models/mobilenet`.
-- **Pipeline hiện tại**:
-  1. Gọi `model.classify(videoRef.current, 5)` mỗi `1.5s`.
-  2. Hàm [`mapImageNetPredictionsToSku`](../frontend/reporting/pack-station-web/src/lib/cv-mapper.ts) đối khớp 1.000 lớp ImageNet thô sang từ khóa của 12 SKU mẫu (`SKU-0001`..`SKU-0012`).
-  3. Ngưỡng tin cậy `CV_CONFIDENCE_THRESHOLD = 0.6` (`60%`). Dưới ngưỡng chỉ hiển thị nhãn ImageNet gốc và yêu cầu quét barcode.
-  4. Ngay cả khi vượt ngưỡng, quy trình đóng kiện bắt buộc người vận hành đối chiếu barcode/chọn xác nhận (`scan` / `matchStatus`) và ghi đính chính (`correction`) về `core-api` & `ai-worker`.
-- **Giới hạn quan trọng**: Đây là bộ nhận diện ImageNet tổng quát **chưa qua fine-tune trên 12 SKU hộp/thùng thực tế**; không dùng để thay thế máy quét barcode 1D/2D.
+### Card 4 — Phát hiện Bất thường Z-Score (`detectAnomalies`)
+- **Thuật toán**: Với từng cột số hợp lệ, tính trung bình mẫu và độ lệch chuẩn mẫu ($N - 1$ bậc tự do); điểm có $|z| > 3$ gắn `is_anomaly: true`. Kèm `min_recommended_samples: 5` và `data_sufficiency`.
+
+### Card 5 — Nhận diện Hỗ trợ tại Trạm Đóng gói (MobileNet v2 ImageNet + HITL)
+- **Tệp nguồn**: [`pack-station-web/src/app/pack/page.tsx`](../frontend/reporting/pack-station-web/src/app/pack/page.tsx), [`cv-mapper.ts`](../frontend/reporting/pack-station-web/src/lib/cv-mapper.ts).
+- **Pipeline**: Chạy WASM/WebGL trên trình duyệt (`model.classify(videoRef.current, 5)` mỗi `1.5s`), ngưỡng `CV_CONFIDENCE_THRESHOLD = 0.6`. Dưới ngưỡng hoặc chưa xác nhận barcode -> không cho phép bỏ qua bước kiểm đếm thủ công/Web Serial. Chưa fine-tune trên dữ liệu thùng hàng thật (`[CHƯA ĐO PILOT]`).
 
 ---
 
 ## 3. Quy trình Thu thập Dữ liệu & Kiểm chứng Thực nghiệm cho Đợt Pilot
 
-Để điền các cột đo đạc thực tế (hiện đang bỏ trống/`unmeasured`) và huấn luyện offline thực sự thay thế cho endpoint `501`, đợt pilot phải tuân thủ quy trình 4 bước:
-
-1. **Thu thập nhãn có kiểm soát (Human-in-the-Loop Data Collection)**:
-   - Tại trạm đóng gói, thu thập ảnh chụp thực tế kèm ánh sáng kho (tối thiểu 3 mức độ sáng và 3 góc đặt camera trên mỗi SKU), gắn nhãn từ barcode chuẩn và lưu qua `POST /api/v1/ai/v1/feedback`.
-   - Xuất dữ liệu sạch đã được kiểm tra (`human_corrected IS NOT NULL`) bằng `GET /api/v1/ai/v1/training-dataset`.
-2. **Phân chia tập dữ liệu không rò rỉ (Strict Time-Based Split)**:
-   - Tách theo trục thời gian (`train` các tuần đầu -> `validation` tuần kế tiếp -> `holdout test` tuần cuối), tuyệt đối không xáo trộn ngẫu nhiên các bản ghi cùng đơn hàng hoặc cùng ca đóng gói.
-3. **Thước đo bắt buộc theo từng bài toán**:
-   - *Phân loại SKU (CV)*: Top-1/Top-5 Accuracy theo từng lớp SKU, **Confusion Matrix**, False Positive Rate (nhận nhầm SKU sai khi barcode không quét) dưới từng điều kiện ánh sáng, kèm độ trễ suy luận trên thiết bị mục tiêu.
-   - *Dự báo nhu cầu & ETA*: **MAE**, **RMSE**, **MAPE** đối chiếu trực tiếp với baseline trung bình trượt đơn giản (moving average).
-   - *VRP Heuristic*: Tổng quãng đường (km), số xe dùng, thời gian giải toàn luồng (gồm cả geocode) và % chênh lệch gap khi chạy đối chứng offline với bộ giải chuẩn (như Google OR-Tools) trên cùng tập đơn lịch sử.
-4. **Đăng ký trọng số sau kiểm chứng**:
-   - Chỉ khi vượt baseline trên tập `holdout test`, tiến hành chuyển đổi sang TF.js / ONNX / công thức đã hiệu chuẩn và gọi `POST /api/v1/ai/v1/models` với `accuracy` thực đo và biên bản `metadata`.
+1. **Thu thập nhãn có kiểm soát (HITL)**: Ảnh trạm đóng gói (tối thiểu 3 góc x 3 mức sáng/SKU) gắn barcode chuẩn qua `POST /api/v1/ai/v1/feedback`, kết hợp lịch sử sửa mã HS (`hs_code_suggestions.approved_hs_code`); xuất qua `GET /api/v1/ai/v1/training-dataset` (`human_corrected IS NOT NULL`).
+2. **Tách tập dữ liệu theo thời gian (`Strict Time-Based Split`)**: Tuần 1–N (`train`) -> tuần kế (`validation`) -> tuần cuối (`holdout test`), không xáo trộn bản ghi cùng đơn hoặc cùng ngày.
+3. **Thước đo bắt buộc (`[CHƯA ĐO PILOT]`)**:
+   - *CV*: Top-1/Top-5 Accuracy, Confusion Matrix, FPR khi sai bao bì.
+   - *Demand / ETA*: MAE, RMSE, MAPE đối chiếu Moving Average.
+   - *VRP & Container Drayage*: Quãng đường thực tế, tỷ lệ chạy rỗng (`emptyMilesRatioPct`), đối chứng offline với OR-Tools trên đơn thật tại Đồng Nai – Cát Lái – Cái Mép.
+   - *HS Code*: Tỷ lệ chấp thuận top-1 / top-3 bởi nhân viên khai báo hải quan.
+4. **Đăng ký mô hình**: Chỉ gọi `POST /api/v1/ai/v1/models` với chỉ số đo thật sau khi vượt baseline trên `holdout test`.

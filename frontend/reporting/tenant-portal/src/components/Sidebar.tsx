@@ -25,12 +25,23 @@ const SECTIONS: NavSection[] = [
     items: [
       { label: 'Điều phối', href: '/logistics/dispatch' },
       { label: 'Tài xế', href: '/drivers' },
+      { label: 'Mô phỏng Tài xế', href: '/driver-sim' },
       { label: 'Phương tiện', href: '/logistics/vehicles' },
       { label: 'Geofence', href: '/logistics/geofences' },
       { label: 'Cảnh báo SOS', href: '/logistics/sos' },
       { label: 'Trả hàng', href: '/logistics/returns' },
       { label: 'Chi phí chuyến', href: '/logistics/expenses' },
       { label: 'Báo cáo vận tải', href: '/logistics/reports' },
+    ],
+  },
+  {
+    title: 'Doanh nghiệp & XNK',
+    items: [
+      { label: 'Địa giới Đồng Nai', href: '/geography' },
+      { label: 'Container & Booking', href: '/freight' },
+      { label: 'Bãi Cont & EIR', href: '/yard' },
+      { label: 'Chứng từ XNK & HS', href: '/trade' },
+      { label: 'Giá cước, DEM/DET & DLQ', href: '/finance/freight' },
     ],
   },
   {
@@ -75,7 +86,10 @@ export default function Sidebar() {
       return [
         {
           title: 'Ca của tôi',
-          items: [{ label: 'Chuyến của tôi', href: '/drivers/my-trips' }],
+          items: [
+            { label: 'Chuyến của tôi', href: '/drivers/my-trips' },
+            { label: 'Mô phỏng Tài xế', href: '/driver-sim' },
+          ],
         },
         ...filtered,
       ];

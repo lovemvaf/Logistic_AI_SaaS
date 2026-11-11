@@ -5,13 +5,15 @@
   "scripts": {
     "dev": "next dev -p 4003",
     "build": "next build",
-    "start": "next start -p 4003"
+    "start": "next start -p 4003",
+    "vercel-build": "pnpm --filter shared-types build && pnpm --filter prisma-schemas exec prisma generate && pnpm --filter demo-cloud-api build && pnpm --filter ui-components build && pnpm --filter ui-kit build && next build"
   },
   "dependencies": {
     "@react-oauth/google": "^0.13.5",
     "axios": "^1.16.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
+    "demo-cloud-api": "workspace:*",
     "next": "15.5.28",
     "react": "19.0.0",
     "react-dom": "19.0.0",

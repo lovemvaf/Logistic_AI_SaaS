@@ -6,8 +6,12 @@ const isBrowser = () => typeof window !== "undefined";
 export const decodeJwt = (token: string): any => {
   try {
     const payload = token.split(".")[1];
-    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
-    const decoded = atob(normalized);
+    if (!payload) return null;
+    const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), "=");
+    const binary = atob(padded);
+    const bytes = Uint8Array.from(binary, (ch) => ch.charCodeAt(0));
+    const decoded = new TextDecoder().decode(bytes);
     return JSON.parse(decoded);
   } catch {
     return null;
@@ -42,6 +46,9 @@ export const getUser = (): any | null => {
 export const setUser = (user: any) => {
   if (!isBrowser()) return;
   window.localStorage.setItem(USER_KEY, JSON.stringify(user));
+  if (user?.slug || user?.tenantSlug) {
+    window.localStorage.setItem("smartlogi_tenant_slug", user.slug || user.tenantSlug);
+  }
 };
 
 export const clearUser = () => {
