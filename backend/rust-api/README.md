@@ -20,7 +20,7 @@ Không xoá `backend/core-api` cho tới khi mọi route đã chuyển và có k
 ```
 backend/rust-api/
 ├── Cargo.toml                 # workspace
-├── rust-toolchain.toml        # pin 1.82
+├── rust-toolchain.toml        # stable toolchain
 ├── Dockerfile                 # multi-stage, chạy cổng 8080
 ├── .env.example
 ├── migrations/                # nơi đặt SQL khi bắt đầu chuyển schema

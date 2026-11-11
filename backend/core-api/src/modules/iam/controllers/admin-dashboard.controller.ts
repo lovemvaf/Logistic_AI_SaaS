@@ -24,7 +24,7 @@ export class AdminDashboardController {
         }),
         // Cross-tenant aggregate: only the platform path may read the user
         // table of every tenant, so row-level security is lifted explicitly.
-        this.prisma.runAsPlatform((db) => db.tenantUser.count()),
+        this.prisma.runAsPlatform<number>((db) => db.tenantUser.count()),
       ]);
 
       const activeTenants = allTenants.filter(t => t.status === "ACTIVE").length;
@@ -77,7 +77,7 @@ export class AdminDashboardController {
   @RequirePermissions(Permissions.BillingRead)
   async logistics() {
     try {
-      return await this.prisma.runAsPlatform(async (db) => {
+      return await this.prisma.runAsPlatform<any>(async (db) => {
         const startOfDay = new Date();
         startOfDay.setHours(0, 0, 0, 0);
 

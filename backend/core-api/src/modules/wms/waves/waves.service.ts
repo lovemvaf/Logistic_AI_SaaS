@@ -59,10 +59,13 @@ export class WavesService {
         include: { product: true },
       });
 
-      const productDemands = orderItems.reduce((acc: Record<string, number>, item: any) => {
-        acc[item.productId] = (acc[item.productId] || 0) + item.quantity;
-        return acc;
-      }, {});
+      const productDemands: Record<string, number> = orderItems.reduce(
+        (acc: Record<string, number>, item: any) => {
+          acc[item.productId] = (acc[item.productId] || 0) + Number(item.quantity || 0);
+          return acc;
+        },
+        {} as Record<string, number>,
+      );
 
       for (const [productId, requiredQty] of Object.entries(productDemands)) {
         const stocks = await tx.inventory.findMany({

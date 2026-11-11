@@ -202,7 +202,7 @@ export class AdminBillingController {
   @RequirePermissions(Permissions.BillingRead)
   async listInvoices() {
     try {
-      return await this.prisma.runAsPlatform((db) =>
+      return await this.prisma.runAsPlatform<any>((db) =>
         db.invoice.findMany({ include: { items: true, tenant: true, client: true } }),
       );
     } catch (error) {
@@ -238,7 +238,7 @@ export class AdminBillingController {
     });
     const totalAmount = Math.round(lineItems.reduce((sum, li) => sum + li.lineTotal, 0) * 100) / 100;
 
-    return this.prisma.runAsPlatform((db) =>
+    return this.prisma.runAsPlatform<any>((db) =>
       db.invoice.create({
         data: {
           tenantId: body.tenantId,
@@ -261,7 +261,7 @@ export class AdminBillingController {
       throw new BadRequestException("Payment amount must be greater than zero");
     }
 
-    return this.prisma.runAsPlatform((db) =>
+    return this.prisma.runAsPlatform<any>((db) =>
       db.$transaction(async (tx: any) => {
         const invoice = await tx.invoice.findUnique({
           where: { id: body.invoiceId },

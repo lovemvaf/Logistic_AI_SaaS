@@ -183,7 +183,7 @@ export default function RolesPage() {
               return (
                 <div key={key} className="rounded-xl border border-line bg-canvas p-4">
                   <h3 className="mb-2 text-[12px] font-medium text-ink">{group.label}</h3>
-                  {selectedPermissions.hasAll ? (
+                  {selectedPermissions?.hasAll ? (
                     <p className="text-[11px] text-ink-faint">Toàn quyền.</p>
                   ) : perms.length === 0 ? (
                     <p className="text-[11px] text-ink-faint">Không có quyền.</p>

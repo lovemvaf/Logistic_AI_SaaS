@@ -27,7 +27,7 @@ export class ApiKeyVerifyController {
 
     const keyHash = crypto.createHash('sha256').update(rawKey).digest('hex');
     // Gateway API-key check occurs prior to tenant context; run under platform bypass.
-    const record = await this.prisma.runAsPlatform((db) =>
+    const record = await this.prisma.runAsPlatform<any>((db) =>
       db.tenantApiKey.findUnique({
         where: { keyHash },
         include: { tenant: true },
