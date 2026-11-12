@@ -194,44 +194,44 @@ export default function ClientWebhooks() {
       </EditorialSection>
 
       <EditorialSection eyebrow="Danh sách" title={listSummary(filtered.length, 'webhook')}>
-        <TableState
-          loading={loading}
-          empty={!filtered.length}
-          error={error || undefined}
-          colSpan={5}
-          emptyTitle="Chưa có webhook"
-          emptyDescription="URL nhận thông báo sẽ hiển thị dưới đây."
-          onRetry={fetchWebhooks}
-        >
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] border-collapse text-left">
-              <caption className="sr-only">Bảng webhook công ty</caption>
-              <thead>
-                <tr className="border-b border-line">
-                  <th scope="col" className="h-9 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-                    URL
-                  </th>
-                  <th scope="col" className="h-9 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-                    Sự kiện
-                  </th>
-                  <th scope="col" className="h-9 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-                    Trạng thái
-                  </th>
-                  <th scope="col" className="h-9 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-                    Tỷ lệ thành công
-                  </th>
-                  <th scope="col" className="h-9 pl-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-                    Hành động
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[720px] border-collapse text-left">
+            <caption className="sr-only">Bảng webhook công ty</caption>
+            <thead>
+              <tr className="border-b border-line">
+                <th scope="col" className="h-9 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+                  URL
+                </th>
+                <th scope="col" className="h-9 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+                  Sự kiện
+                </th>
+                <th scope="col" className="h-9 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+                  Trạng thái
+                </th>
+                <th scope="col" className="h-9 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+                  Tỷ lệ thành công
+                </th>
+                <th scope="col" className="h-9 pl-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+                  Hành động
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <TableState
+                loading={loading}
+                empty={!filtered.length}
+                error={error || undefined}
+                colSpan={5}
+                emptyTitle="Chưa có webhook"
+                emptyDescription="URL nhận thông báo sẽ hiển thị dưới đây."
+                onRetry={fetchWebhooks}
+              >
                 {filtered.map((row) => (
                   <tr key={row.id} className="h-[42px] border-b border-line/80 hover:bg-surface-alt/60">
                     <td className="pr-3 font-mono text-[12px] text-ink-soft">{row.url}</td>
                     <td className="px-3">
                       <div className="flex flex-wrap gap-1">
-                        {row.events.map((event: string) => (
+                        {(row.events ?? []).map((event: string) => (
                           <span key={event} className="px-2 py-0.5 bg-surface text-[10px] font-medium leading-none text-ink-soft">
                             {EVENT_LABEL[event] ?? event}
                           </span>
@@ -244,7 +244,7 @@ export default function ClientWebhooks() {
                       </StatusLabel>
                     </td>
                     <td className="px-3 text-right text-[12px] tabular-nums text-ink-soft">
-                      {`${Math.round(row.successRate * 100)}%`}
+                      {`${Math.round((row.successRate ?? 1) * 100)}%`}
                     </td>
                     <td className="px-3 pl-3">
                       <div className="flex items-center gap-3">
@@ -266,10 +266,10 @@ export default function ClientWebhooks() {
                     </td>
                   </tr>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        </TableState>
+              </TableState>
+            </tbody>
+          </table>
+        </div>
       </EditorialSection>
 
       <Modal

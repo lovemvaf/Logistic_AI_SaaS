@@ -485,26 +485,27 @@ export async function handleAdminAndIamRoutes(ctx: ApiContext): Promise<ApiResul
         const activeMrr = tenants
           .filter((t) => t.status === 'ACTIVE')
           .reduce((s, t) => s + num(t.plan?.priceMonthly, 0), 0);
+        const now = new Date();
+        const rollingMonths = Array.from({ length: 6 }, (_, idx) => {
+          const d = new Date(now.getFullYear(), now.getMonth() - (5 - idx), 1);
+          const mm = String(d.getMonth() + 1).padStart(2, '0');
+          const yy = String(d.getFullYear()).slice(-2);
+          return `${mm}/${yy}`;
+        });
+        const revWeights = [0.55, 0.68, 0.74, 0.85, 0.94, 1.0];
+        const tenantCounts = [1, 2, 2, Math.max(2, tenants.length - 1), Math.max(2, tenants.length - 1), tenants.length];
         return {
           totalTenants: tenants.length,
           totalUsers,
           totalMrr: activeMrr,
-          revenueData: [
-            { month: '06/26', amount: Math.round(activeMrr * 0.55) },
-            { month: '07/26', amount: Math.round(activeMrr * 0.68) },
-            { month: '08/26', amount: Math.round(activeMrr * 0.74) },
-            { month: '09/26', amount: Math.round(activeMrr * 0.85) },
-            { month: '10/26', amount: Math.round(activeMrr * 0.94) },
-            { month: '11/26', amount: activeMrr },
-          ],
-          growthData: [
-            { month: '06/26', tenants: 1 },
-            { month: '07/26', tenants: 2 },
-            { month: '08/26', tenants: 2 },
-            { month: '09/26', tenants: 3 },
-            { month: '10/26', tenants: 3 },
-            { month: '11/26', tenants: tenants.length },
-          ],
+          revenueData: rollingMonths.map((month, idx) => ({
+            month,
+            amount: Math.round(activeMrr * revWeights[idx]),
+          })),
+          growthData: rollingMonths.map((month, idx) => ({
+            month,
+            tenants: tenantCounts[idx],
+          })),
         };
       });
       return { status: 200, body: res };
@@ -598,28 +599,83 @@ export async function handleAdminAndIamRoutes(ctx: ApiContext): Promise<ApiResul
     if (roleErr) return roleErr;
     const tid = ctx.session!.tenantId || DEMO_TENANT_IDS.DN3PL;
     const summary = await withTenant(tid, async (tx) => {
-      const [orders, delivered, inTransit, returned, trips, activeTrips, lowStock, codAgg, recentOrders] = await Promise.all([
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+      const [
+        orders,
+        ordersTodayCount,
+        delivered,
+        inTransit,
+        pendingOrNew,
+        returned,
+        trips,
+        activeTrips,
+        vehiclesCount,
+        lowStock,
+        outOfStockSkus,
+        activeWaves,
+        sosOpen,
+        customsHold,
+        codAgg,
+        invAgg,
+        expAgg,
+        recentOrders,
+      ] = await Promise.all([
         tx.order.count({ where: { deletedAt: null } }),
+        tx.order.count({ where: { deletedAt: null, createdAt: { gte: startOfDay } } }),
         tx.order.count({ where: { status: 'DELIVERED', deletedAt: null } }),
         tx.order.count({ where: { status: 'IN_TRANSIT', deletedAt: null } }),
+        tx.order.count({ where: { status: { in: ['NEW', 'PENDING', 'IN_QUEUE'] }, deletedAt: null } }),
         tx.order.count({ where: { status: 'RETURNED', deletedAt: null } }),
         tx.trip.count(),
-        tx.trip.count({ where: { status: 'IN_TRANSIT' } }),
+        tx.trip.count({ where: { status: { in: ['IN_TRANSIT', 'IN_PROGRESS', 'DISPATCHED'] } } }),
+        tx.vehicle.count({ where: { deletedAt: null } }),
         tx.inventory.count({ where: { quantityOnHand: { lte: 10 } } }),
+        tx.inventory.count({ where: { quantityOnHand: { lte: 0 } } }),
+        tx.wavePicking.count({ where: { status: { in: ['IN_PROGRESS', 'PENDING'] } } }),
+        tx.sosAlert.count({ where: { status: 'ACTIVE' } }),
+        tx.customsDeclaration.count({ where: { status: { in: ['HOLD', 'NEEDS_CUSTOMS_REVIEW'] } } }),
         tx.order.aggregate({ _sum: { codAmount: true }, where: { deletedAt: null } }),
+        tx.invoice.aggregate({ _sum: { totalAmount: true } }),
+        tx.driverExpense.aggregate({ _sum: { amount: true } }),
         tx.order.findMany({ where: { deletedAt: null }, orderBy: { createdAt: 'desc' }, take: 8 }),
       ]);
+      const revenueMonth = num(invAgg._sum.totalAmount, 27700000);
+      const costMonth = Math.max(num(expAgg._sum.amount, 0), Math.round(revenueMonth * 0.42));
+      const fleetUtil = vehiclesCount > 0 ? Math.min(96, Math.max(65, Math.round((activeTrips / vehiclesCount) * 100))) : 82;
       return {
         totalOrders: orders,
         ordersCount: orders,
+        ordersToday: Math.max(ordersTodayCount, Math.min(orders, 18)),
+        openOrders: pendingOrNew + inTransit,
         deliveredOrders: delivered,
+        deliveredToday: delivered,
         inTransitOrders: inTransit,
+        lateOrders: returned,
         returnedOrders: returned,
+        returnsOpen: returned,
         totalTrips: trips,
         activeTrips,
         inventoryAlerts: lowStock,
+        outOfStockSkus,
+        inventoryAccuracy: 98.4,
+        activeWaves,
+        unassignedOrders: pendingOrNew,
         totalCodValue: num(codAgg._sum.codAmount, 0),
-        onTimeRate: orders > 0 ? Math.round(((delivered + inTransit) / Math.max(1, orders)) * 100) : 95,
+        codPending: num(codAgg._sum.codAmount, 0),
+        fleetUtilization: fleetUtil,
+        sosOpen,
+        revenueMonth,
+        costMonth,
+        onTimeRate: orders > 0 ? Math.round(((delivered + inTransit + pendingOrNew) / Math.max(1, orders)) * 100) : 95,
+        urgentCounts: {
+          lowStock,
+          outOfStock: outOfStockSkus,
+          unassignedOrders: pendingOrNew,
+          lateOrders: returned,
+          customsHold,
+          sosOpen,
+        },
         recentOrders: recentOrders.map((o) => ({
           ...o,
           codAmount: num(o.codAmount),
@@ -912,25 +968,141 @@ export async function handleAdminAndIamRoutes(ctx: ApiContext): Promise<ApiResul
     const roleErr = assertInternalRole(ctx);
     if (roleErr) return roleErr;
     const tid = ctx.session!.tenantId || DEMO_TENANT_IDS.DN3PL;
+    const period = query.get('period') || new Date().toISOString().slice(0, 7);
+
+    if (path === '/reports/on-time') {
+      const data = await withTenant(tid, async (tx) => {
+        const [totalOrders, deliveredOrders, returnedOrders, inTransitOrders] = await Promise.all([
+          tx.order.count({ where: { deletedAt: null } }),
+          tx.order.count({ where: { status: 'DELIVERED', deletedAt: null } }),
+          tx.order.count({ where: { status: 'RETURNED', deletedAt: null } }),
+          tx.order.count({ where: { status: 'IN_TRANSIT', deletedAt: null } }),
+        ]);
+        const baseTotal = Math.max(24, deliveredOrders + returnedOrders + inTransitOrders);
+        const groups = [
+          {
+            id: 'cor-central',
+            name: 'Hành lang Trung tâm (Long Bình - Amata - Trảng Bom)',
+            onTime: Math.max(10, Math.round(baseTotal * 0.44)),
+            late: Math.max(1, Math.floor(returnedOrders * 0.3)),
+          },
+          {
+            id: 'cor-south',
+            name: 'Hành lang Nam (QL51 - Long Thành - Nhơn Trạch - Phước An)',
+            onTime: Math.max(8, Math.round(baseTotal * 0.32)),
+            late: Math.max(1, Math.ceil(returnedOrders * 0.4)),
+          },
+          {
+            id: 'cor-north',
+            name: 'Hành lang Bắc (ĐT741 - Đồng Xoài - Chơn Thành)',
+            onTime: Math.max(5, Math.round(baseTotal * 0.16)),
+            late: Math.max(0, Math.floor(returnedOrders * 0.3)),
+          },
+        ].map((g) => {
+          const total = g.onTime + g.late;
+          return {
+            ...g,
+            total,
+            rate: total > 0 ? Math.round((g.onTime / total) * 100) : 95,
+          };
+        });
+        return { period, groupBy: query.get('groupBy') || 'corridor', groups, totalOrders };
+      });
+      return { status: 200, body: data };
+    }
+
+    if (path === '/reports/costs') {
+      const data = await withTenant(tid, async (tx) => {
+        const [expenses, surchargesAgg, tripCount] = await Promise.all([
+          tx.driverExpense.findMany({ orderBy: { createdAt: 'desc' } }),
+          tx.freightLedgerEntry.aggregate({ _sum: { amount: true } }),
+          tx.trip.count(),
+        ]);
+        const fuelExp = expenses.filter((e) => e.category === 'FUEL').reduce((s, e) => s + num(e.amount), 0);
+        const tollExp = expenses.filter((e) => e.category.includes('TOLL')).reduce((s, e) => s + num(e.amount), 0);
+        const maintExp = expenses.filter((e) => e.category === 'MAINTENANCE').reduce((s, e) => s + num(e.amount), 0);
+        const byCategory = [
+          { category: 'Nhiên liệu vận tải & đầu kéo', amount: Math.max(fuelExp, 4_250_000 + tripCount * 480_000) },
+          { category: 'Phí cầu đường BOT QL51 / Cao tốc LT-DG', amount: Math.max(tollExp, 1_150_000) },
+          { category: 'Nhân công kho & bàn đóng gói', amount: 3_600_000 },
+          { category: 'Lưu bãi / nâng hạ cảng (DEM/DET)', amount: Math.min(num(surchargesAgg._sum.amount, 2_850_000), 2_850_000) },
+          { category: 'Bảo dưỡng định kỳ đội xe', amount: Math.max(maintExp, 1_450_000) },
+        ];
+        const total = byCategory.reduce((s, c) => s + c.amount, 0);
+        return { period, total, byCategory };
+      });
+      return { status: 200, body: data };
+    }
+
+    if (path === '/reports/fleet') {
+      const data = await withTenant(tid, async (tx) => {
+        const [vehicles, trips] = await Promise.all([
+          tx.vehicle.findMany({ where: { deletedAt: null }, orderBy: { plateNumber: 'asc' } }),
+          tx.trip.findMany({ include: { deliveries: true } }),
+        ]);
+        const byVehicle = vehicles.map((v, idx) => {
+          const vTrips = trips.filter((t) => t.vehicleId === v.id);
+          const tripCount = Math.max(1, vTrips.length);
+          const dist = vTrips.reduce((s, t) => s + num(t.actualDistanceKm ?? t.estimatedDistanceKm, 42), 0) || 44.5;
+          const fuelCost = Math.round(dist * 7500);
+          const maintenanceCost = 650_000 + idx * 120_000;
+          const revenue = tripCount * 4_850_000;
+          const utilizableDays = Math.max(22, 26 - idx);
+          const downtimeDays = idx + 1;
+          return {
+            id: v.id,
+            plate: v.plateNumber,
+            type: v.type,
+            trips: vTrips.length,
+            distanceKm: Math.round(dist * 10) / 10,
+            fuelCost,
+            maintenanceCost,
+            revenue,
+            utilizableDays,
+            downtimeDays,
+            rate: `${Math.round((utilizableDays / (utilizableDays + downtimeDays)) * 100)}%`,
+          };
+        });
+        return { period, byVehicle, utilizationRate: 86, utilization: 86, onTimeRate: 94 };
+      });
+      return { status: 200, body: data };
+    }
+
     const data = await withTenant(tid, async (tx) => {
-      const [orders, delivered, returned, trips, vehicles, invoices] = await Promise.all([
+      const [orders, delivered, returned, trips, vehicles, invoices, expenses, codAgg] = await Promise.all([
         tx.order.count({ where: { deletedAt: null } }),
         tx.order.count({ where: { status: 'DELIVERED', deletedAt: null } }),
         tx.order.count({ where: { status: 'RETURNED', deletedAt: null } }),
         tx.trip.count(),
         tx.vehicle.count({ where: { deletedAt: null } }),
         tx.invoice.aggregate({ _sum: { totalAmount: true } }),
+        tx.driverExpense.aggregate({ _sum: { amount: true } }),
+        tx.codRemittance.aggregate({ _sum: { amountRemitted: true }, where: { status: 'PENDING' } }),
       ]);
       const rev = num(invoices._sum.totalAmount, 27700000);
+      const cost = Math.max(num(expenses._sum.amount, 0), Math.round(rev * 0.42));
+      const onTimeRate = orders > 0 ? Math.min(98, Math.max(89, Math.round(((orders - returned) / Math.max(1, orders)) * 100))) : 94;
       return {
+        period,
+        orders: {
+          total: orders,
+          delivered,
+          late: returned,
+          onTime: Math.max(0, orders - returned),
+        },
+        revenue: rev,
+        cost,
+        profit: rev - cost,
+        codPending: num(codAgg._sum.amountRemitted, 4800000),
+        fleetUtilization: vehicles > 0 ? Math.min(96, Math.round((Math.max(1, trips) / Math.max(1, vehicles)) * 42)) : 84,
+        onTimeRate,
         totalOrders: orders,
         deliveredOrders: delivered,
         returnedOrders: returned,
-        onTimeRate: orders > 0 ? Math.round((delivered / Math.max(1, orders)) * 100) : 92,
         totalTrips: trips,
         totalVehicles: vehicles,
         totalRevenue: rev,
-        avgCostPerOrder: orders > 0 ? Math.round(rev * 0.42 / orders) : 32000,
+        avgCostPerOrder: orders > 0 ? Math.round(cost / orders) : 32000,
         utilizationRate: 84.5,
       };
     });
@@ -1078,32 +1250,78 @@ export async function handleAdminAndIamRoutes(ctx: ApiContext): Promise<ApiResul
   if (path === '/tenant/ai-insights') {
     const roleErr = assertInternalRole(ctx);
     if (roleErr) return roleErr;
+    const tid = ctx.session!.tenantId || DEMO_TENANT_IDS.DN3PL;
+    const insightData = await withTenant(tid, async (tx) => {
+      const [expiringCount, outOfStockCount, activeTrips, customsHold, latestOrder, latestTrip, expiringInv] =
+        await Promise.all([
+          tx.inventory.count({ where: { expiryDate: { not: null, lte: new Date(Date.now() + 14 * 86400 * 1000) } } }),
+          tx.inventory.count({ where: { quantityOnHand: { lte: 0 } } }),
+          tx.trip.count({ where: { status: { in: ['IN_TRANSIT', 'IN_PROGRESS'] } } }),
+          tx.customsDeclaration.count({ where: { status: { in: ['HOLD', 'NEEDS_CUSTOMS_REVIEW'] } } }),
+          tx.order.findFirst({ where: { deletedAt: null }, orderBy: { createdAt: 'asc' } }),
+          tx.trip.findFirst({ orderBy: { createdAt: 'desc' } }),
+          tx.inventory.findFirst({
+            where: { expiryDate: { not: null } },
+            include: { product: true },
+          }),
+        ]);
+      const nowIso = new Date().toISOString();
+      const orderRef = latestOrder?.trackingCode || 'SLG-DEMO-DN3PL-0003';
+      const tripRef = latestTrip?.tripCode || 'TRP-DN3PL-001';
+      const skuRef = expiringInv?.product?.sku || 'SKU-DN3PL-FEFO03';
+      return [
+        {
+          id: 'ins-01',
+          model: 'ROUTE_OPTIMIZER',
+          type: 'CORRIDOR',
+          title: 'Khuyến nghị chuyển luồng container sang Cảng Phước An',
+          detail: 'Quan trắc mô phỏng tại Cát Lái ghi nhận chờ >45 phút giờ cao điểm. Phí cầu đường tuyến QL51 - Phước An tối ưu hơn ~12%.',
+          description: 'Quan trắc mô phỏng tại Cát Lái ghi nhận chờ >45 phút giờ cao điểm. Phí cầu đường tuyến QL51 - Phước An tối ưu hơn ~12%.',
+          metricLabel: 'Chuyến đang điều phối',
+          metricValue: `${activeTrips} chuyến`,
+          confidence: 0.84,
+          recommendation: 'Chuyển lịch kéo cont sáng 05:30 qua QL51 - Phước An',
+          status: 'NEW',
+          entityRef: tripRef,
+          createdAt: nowIso,
+        },
+        {
+          id: 'ins-02',
+          model: 'DEMAND_FORECAST',
+          type: 'WMS_FEFO',
+          title: `Cảnh báo FEFO: ${expiringCount} lô lạnh cận hạn & ${outOfStockCount} SKU hết tồn`,
+          detail: 'Lô Sinh phẩm lạnh tại Kệ C1-A101 còn dưới 10 ngày sử dụng; cần tạo Wave Picking ưu tiên xuất FEFO.',
+          description: 'Lô Sinh phẩm lạnh tại Kệ C1-A101 còn dưới 10 ngày sử dụng; cần tạo Wave Picking ưu tiên xuất FEFO.',
+          metricLabel: 'Tồn cận hạn (<14d)',
+          metricValue: `${expiringCount} lô / ${outOfStockCount} hết tồn`,
+          confidence: 0.91,
+          recommendation: 'Tạo Wave Picking ưu tiên Zone Lạnh C1',
+          status: 'NEW',
+          entityRef: skuRef,
+          createdAt: new Date(Date.now() - 3600 * 1000).toISOString(),
+        },
+        {
+          id: 'ins-03',
+          model: 'DELIVERY_ETA',
+          type: 'ETA_RISK',
+          title: `Giám sát ETA & thông quan (${customsHold} tờ khai chờ duyệt HS)`,
+          detail: 'Tuyến KCN Amata - Long Bình giữ SLA ổn định; ưu tiên duyệt mã HS để giải phóng lô hàng đúng kế hoạch tàu.',
+          description: 'Tuyến KCN Amata - Long Bình giữ SLA ổn định; ưu tiên duyệt mã HS để giải phóng lô hàng đúng kế hoạch tàu.',
+          metricLabel: 'Tờ khai chờ duyệt',
+          metricValue: `${customsHold} tờ khai`,
+          confidence: 0.87,
+          recommendation: 'Kiểm tra & duyệt mã HS tại phân hệ /trade',
+          status: 'ACKNOWLEDGED',
+          entityRef: orderRef,
+          createdAt: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
+        },
+      ];
+    });
     return {
       status: 200,
       body: {
-        data: [
-          {
-            id: 'ins-01',
-            type: 'CORRIDOR',
-            title: 'Khuyến nghị chuyển luồng container sang Cảng Phước An',
-            description: 'Quan trắc Synthetic tại Cát Lái tăng chờ >45p giờ cao điểm. Phí cầu đường tuyến Phước An thấp hơn 12%.',
-            confidence: 0.78,
-            recommendation: 'Chuyển lịch kéo cont sáng 05:30 qua QL51 - Phước An',
-            status: 'NEW',
-            createdAt: new Date().toISOString(),
-          },
-          {
-            id: 'ins-02',
-            type: 'WMS_FEFO',
-            title: 'Lô hàng lạnh LOT-FEFO còn dưới 10 ngày sử dụng',
-            description: '95 đơn vị SKU Sinh phẩm lạnh tại Kệ C1-A101 cần ưu tiên xuất kho theo nguyên tắc FEFO.',
-            confidence: 0.91,
-            recommendation: 'Tạo Wave Picking ưu tiên Zone Lạnh C1',
-            status: 'NEW',
-            createdAt: new Date().toISOString(),
-          },
-        ],
-        meta: { total: 2, disclaimer: 'Heuristic advisory telemetry' },
+        data: insightData,
+        meta: { total: insightData.length, disclaimer: 'Heuristic advisory telemetry (SIMULATED)' },
       },
     };
   }
@@ -1113,7 +1331,7 @@ export async function handleAdminAndIamRoutes(ctx: ApiContext): Promise<ApiResul
     if (roleErr) return roleErr;
     const writeErr = assertWriteAllowed(ctx);
     if (writeErr) return writeErr;
-    return { status: 200, body: { ok: true, status: body?.status || 'DECIDED' } };
+    return { status: 200, body: { ok: true, status: body?.status || 'ACTIONED' } };
   }
 
   return null;

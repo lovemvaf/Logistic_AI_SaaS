@@ -825,10 +825,11 @@ async function seedDemoData(prisma: PrismaClient): Promise<void> {
             { tenantId: td.id, key: 'pack_station_cv_threshold', value: '0.6', description: 'Strict MobileNet V2 anomaly threshold' },
           ],
         });
+        const nowMs = Date.now();
         await tx.apiUsageDaily.createMany({
           data: [
-            { tenantId: td.id, date: new Date('2026-11-10T00:00:00Z'), endpoint: '/api/v1/orders', method: 'GET', count: 420 },
-            { tenantId: td.id, date: new Date('2026-11-11T00:00:00Z'), endpoint: '/api/v1/freight/control-tower', method: 'GET', count: 185 },
+            { tenantId: td.id, date: new Date(nowMs - 86400 * 1000), endpoint: '/api/v1/orders', method: 'GET', count: 420 },
+            { tenantId: td.id, date: new Date(nowMs), endpoint: '/api/v1/freight/control-tower', method: 'GET', count: 185 },
           ],
         });
       }
@@ -1468,7 +1469,7 @@ async function seedDemoData(prisma: PrismaClient): Promise<void> {
             shippingFee: 45000 + (i % 5) * 12000,
             driverId: st === 'IN_TRANSIT' || st === 'DELIVERED' ? driver1.id : null,
             estimatedDeliveryDate: new Date(Date.now() + 2 * 86400 * 1000),
-            actualDeliveryTime: st === 'DELIVERED' ? new Date('2026-11-10T14:20:00Z') : null,
+            actualDeliveryTime: st === 'DELIVERED' ? new Date(Date.now() - 16 * 3600 * 1000) : null,
           });
 
           createdOrderIds.push(orderId);
@@ -1481,6 +1482,86 @@ async function seedDemoData(prisma: PrismaClient): Promise<void> {
             productId: prod.id,
             quantity: (i % 3) + 1,
           });
+
+          const baseEventMs = Date.now() - i * 3600 * 1000;
+          if (i <= 10) {
+            const historySteps: Array<{ status: string; location: string; description: string }> =
+              st === 'PENDING'
+                ? [
+                    {
+                      status: 'NEW',
+                      location: cfg.whAddress,
+                      description: `Tiếp nhận đơn ${trackingCode} từ khách hàng vào hệ thống SmartLogi`,
+                    },
+                  ]
+                : st === 'IN_QUEUE'
+                  ? [
+                      {
+                        status: 'NEW',
+                        location: cfg.whAddress,
+                        description: `Tiếp nhận đơn ${trackingCode} từ khách hàng vào hệ thống SmartLogi`,
+                      },
+                      {
+                        status: 'PENDING',
+                        location: cfg.whName,
+                        description: `Phân bổ tồn kho & lên lịch soạn hàng tại ${cfg.whName}`,
+                      },
+                    ]
+                  : st === 'IN_TRANSIT'
+                    ? [
+                        {
+                          status: 'NEW',
+                          location: cfg.whAddress,
+                          description: `Tiếp nhận đơn ${trackingCode} từ cổng khách hàng B2B`,
+                        },
+                        {
+                          status: 'PENDING',
+                          location: cfg.whName,
+                          description: `Xác nhận soạn hàng & xuất kho ${cfg.whName}`,
+                        },
+                        {
+                          status: 'IN_QUEUE',
+                          location: `Bàn đóng gói STN-PACK-01 · ${cfg.whName}`,
+                          description: `Đưa kiện ${trackingCode} vào hàng đợi kiểm tra CV & cân điện tử`,
+                        },
+                        {
+                          status: 'PACKED',
+                          location: `ICD Tân Cảng Long Bình, Đồng Nai`,
+                          description: `Hoàn tất đóng kiện & bàn giao xe kéo 60C-${cfg.codeSuffix}01`,
+                        },
+                      ]
+                    : [
+                        {
+                          status: 'NEW',
+                          location: cfg.whAddress,
+                          description: `Tiếp nhận đơn ${trackingCode} tại ${cfg.whName}`,
+                        },
+                        {
+                          status: 'PACKED',
+                          location: cfg.whName,
+                          description: `Đã đóng gói & niêm phong kiểm chuẩn ${trackingCode}`,
+                        },
+                        {
+                          status: 'IN_TRANSIT',
+                          location: 'QL51 / Tuyến cao tốc Long Thành, Đồng Nai',
+                          description: `Xe đang vận chuyển đơn ${trackingCode} đến ${loc.addr}`,
+                        },
+                      ];
+
+            historySteps.forEach((step, stepIdx) => {
+              const offsetHours = (historySteps.length - stepIdx) * 3;
+              trackingEventPayload.push({
+                id: detUuid(pfx, 4000 + i * 10 + stepIdx),
+                tenantId: tid,
+                orderId,
+                status: step.status,
+                location: step.location,
+                description: step.description,
+                timestamp: new Date(baseEventMs - offsetHours * 3600 * 1000),
+              });
+            });
+          }
+
           trackingEventPayload.push({
             id: detUuid(pfx, 3000 + i),
             tenantId: tid,
@@ -1488,7 +1569,7 @@ async function seedDemoData(prisma: PrismaClient): Promise<void> {
             status: st,
             location: loc.addr,
             description: `Đơn ${trackingCode} cập nhật trạng thái ${st} tại ${cfg.whName}`,
-            timestamp: new Date(Date.now() - i * 3600 * 1000),
+            timestamp: new Date(baseEventMs),
           });
         }
 
@@ -1497,6 +1578,7 @@ async function seedDemoData(prisma: PrismaClient): Promise<void> {
         await tx.orderTrackingEvent.createMany({ data: trackingEventPayload });
 
         // Trips & Deliveries & COD Remittances
+        const tripNow = Date.now();
         const tripActive = await tx.trip.create({
           data: {
             id: detUuid(pfx, 150),
@@ -1509,8 +1591,8 @@ async function seedDemoData(prisma: PrismaClient): Promise<void> {
             totalVolumeCbm: 32,
             estimatedDistanceKm: 44.5,
             aiOptimized: true,
-            departureTime: new Date('2026-11-11T05:30:00Z'),
-            createdAt: new Date('2026-11-11T05:30:00Z'),
+            departureTime: new Date(tripNow - 4 * 3600 * 1000),
+            createdAt: new Date(tripNow - 4 * 3600 * 1000),
           },
         });
         const tripDraft = await tx.trip.create({
@@ -1524,7 +1606,7 @@ async function seedDemoData(prisma: PrismaClient): Promise<void> {
             totalWeightKg: 2100,
             totalVolumeCbm: 8.5,
             estimatedDistanceKm: 28.0,
-            createdAt: new Date('2026-11-11T05:00:00Z'),
+            createdAt: new Date(tripNow - 5 * 3600 * 1000),
           },
         });
 
@@ -1592,6 +1674,22 @@ async function seedDemoData(prisma: PrismaClient): Promise<void> {
               checkinLng: 106.953142,
               driverId: driver1.id,
             },
+            {
+              id: detUuid(pfx, 501),
+              tenantId: tid,
+              tripId: tripDraft.id,
+              orderId: createdOrderIds[1],
+              stopSequence: 1,
+              stopType: 'DELIVERY',
+              status: 'PENDING',
+              customerName: 'Amata Precision Plant 1 — KCN Nhơn Trạch III',
+              customerPhone: '0901001006',
+              deliveryAddress: dongNaiDistrictAddresses[2].addr,
+              lat: dongNaiDistrictAddresses[2].lat,
+              lng: dongNaiDistrictAddresses[2].lng,
+              codAmountExpected: 980000,
+              driverId: driver2.id,
+            },
           ],
         });
 
@@ -1609,6 +1707,7 @@ async function seedDemoData(prisma: PrismaClient): Promise<void> {
         });
 
         if (cfg.seedBankCsvRemittances) {
+          const remNow = Date.now();
           await tx.codRemittance.createMany({
             data: [
               {
@@ -1619,7 +1718,7 @@ async function seedDemoData(prisma: PrismaClient): Promise<void> {
                 amountRemitted: 2850000,
                 status: 'PENDING',
                 qrCodeToken: 'REM-20261101',
-                createdAt: new Date('2026-11-11T08:00:00Z'),
+                createdAt: new Date(remNow - 3600 * 1000),
               },
               {
                 id: detUuid(pfx, 158),
@@ -1630,7 +1729,7 @@ async function seedDemoData(prisma: PrismaClient): Promise<void> {
                 amountRemitted: 4120000,
                 status: 'APPROVED',
                 qrCodeToken: 'REM-20261102',
-                createdAt: new Date('2026-11-11T08:05:00Z'),
+                createdAt: new Date(remNow - 3500 * 1000),
               },
               {
                 id: detUuid(pfx, 159),
@@ -1640,7 +1739,7 @@ async function seedDemoData(prisma: PrismaClient): Promise<void> {
                 amountRemitted: 1950000,
                 status: 'PENDING',
                 qrCodeToken: 'REM-20261103',
-                createdAt: new Date('2026-11-11T08:10:00Z'),
+                createdAt: new Date(remNow - 3400 * 1000),
               },
             ],
           });
@@ -1690,7 +1789,7 @@ async function seedDemoData(prisma: PrismaClient): Promise<void> {
             totalAmount: 9200000,
             status: 'PAID',
             dueAt: new Date(Date.now() - 5 * 86400 * 1000),
-            paidAt: new Date('2026-11-05T09:00:00Z'),
+            paidAt: new Date(Date.now() - 6 * 86400 * 1000),
           },
         });
         await tx.paymentTransaction.create({
@@ -1749,38 +1848,103 @@ async function seedDemoData(prisma: PrismaClient): Promise<void> {
           },
         });
 
-        // PackStation shifts + logs
-        await tx.staffShift.create({
-          data: {
-            id: detUuid(pfx, 172),
-            tenantId: tid,
-            warehouseId: wh.id,
-            staffId: cfg.staffUserId,
-            shiftStart: new Date(Date.now() - 2 * 3600 * 1000),
-            status: 'OPEN',
-          },
+        // PackStation shifts + logs (OPEN current shift + CLOSED previous shift + rich scan & weight telemetry)
+        await tx.staffShift.createMany({
+          data: [
+            {
+              id: detUuid(pfx, 172),
+              tenantId: tid,
+              warehouseId: wh.id,
+              staffId: cfg.staffUserId,
+              shiftStart: new Date(Date.now() - 2 * 3600 * 1000),
+              status: 'OPEN',
+            },
+            {
+              id: detUuid(pfx, 180),
+              tenantId: tid,
+              warehouseId: wh.id,
+              staffId: cfg.staffUserId,
+              shiftStart: new Date(Date.now() - 26 * 3600 * 1000),
+              shiftEnd: new Date(Date.now() - 18 * 3600 * 1000),
+              status: 'CLOSED',
+            },
+          ],
         });
-        await tx.scanLog.create({
-          data: {
-            id: detUuid(pfx, 173),
-            tenantId: tid,
-            warehouseId: wh.id,
-            barcode: products[0].barcode || products[0].sku,
-            result: 'MATCHED',
-            deviceId: 'STN-PACK-01',
-            actorId: cfg.staffUserId,
-          },
+        await tx.scanLog.createMany({
+          data: [
+            {
+              id: detUuid(pfx, 173),
+              tenantId: tid,
+              warehouseId: wh.id,
+              barcode: `${createdOrderCodes[0]}:${products[0].sku}`,
+              result: 'MATCHED',
+              deviceId: 'STN-PACK-01',
+              actorId: cfg.staffUserId,
+              createdAt: new Date(Date.now() - 55 * 60 * 1000),
+            },
+            {
+              id: detUuid(pfx, 181),
+              tenantId: tid,
+              warehouseId: wh.id,
+              barcode: `${createdOrderCodes[1]}:${products[1].sku}`,
+              result: 'MISMATCHED',
+              deviceId: 'STN-PACK-01',
+              actorId: cfg.staffUserId,
+              createdAt: new Date(Date.now() - 42 * 60 * 1000),
+            },
+            {
+              id: detUuid(pfx, 182),
+              tenantId: tid,
+              warehouseId: wh.id,
+              barcode: `${createdOrderCodes[2]}:${products[0].sku}`,
+              result: 'OVERRIDDEN',
+              deviceId: 'STN-PACK-01',
+              actorId: cfg.staffUserId,
+              createdAt: new Date(Date.now() - 35 * 60 * 1000),
+            },
+            {
+              id: detUuid(pfx, 183),
+              tenantId: tid,
+              warehouseId: wh.id,
+              barcode: `${createdOrderCodes[3]}:${products[2].sku}`,
+              result: 'MATCHED',
+              deviceId: 'STN-PACK-02',
+              actorId: cfg.staffUserId,
+              createdAt: new Date(Date.now() - 24 * 60 * 1000),
+            },
+            {
+              id: detUuid(pfx, 184),
+              tenantId: tid,
+              warehouseId: wh.id,
+              barcode: `${createdOrderCodes[5]}:${products[0].sku}`,
+              result: 'MATCHED',
+              deviceId: 'STN-PACK-01',
+              actorId: cfg.staffUserId,
+              createdAt: new Date(Date.now() - 12 * 60 * 1000),
+            },
+          ],
         });
-        await tx.packStationLog.create({
-          data: {
-            id: detUuid(pfx, 174),
-            tenantId: tid,
-            warehouseId: wh.id,
-            orderId: createdOrderIds[3],
-            weightGrams: 1450,
-            dimensionCm: '35x25x20',
-            deviceId: 'STN-PACK-01',
-          },
+        await tx.packStationLog.createMany({
+          data: [
+            {
+              id: detUuid(pfx, 174),
+              tenantId: tid,
+              warehouseId: wh.id,
+              orderId: createdOrderIds[3],
+              weightGrams: 1450,
+              dimensionCm: '35x25x20',
+              deviceId: 'STN-PACK-01',
+            },
+            {
+              id: detUuid(pfx, 185),
+              tenantId: tid,
+              warehouseId: wh.id,
+              orderId: createdOrderIds[2],
+              weightGrams: 2800,
+              dimensionCm: '40x30x25',
+              deviceId: 'STN-PACK-01',
+            },
+          ],
         });
 
         // Container / Tractor / Chassis / Yard / EIR / Freight / XNK
@@ -1944,8 +2108,8 @@ async function seedDemoData(prisma: PrismaClient): Promise<void> {
             serviceMode: 'FCL',
             containerSize: '40HC',
             baseRate: 4850000,
-            validFrom: new Date('2026-01-01T00:00:00Z'),
-            validTo: new Date('2026-12-31T23:59:59Z'),
+            validFrom: new Date(Date.now() - 60 * 86400 * 1000),
+            validTo: new Date(Date.now() + 180 * 86400 * 1000),
             status: 'ACTIVE',
           },
         });
@@ -2088,7 +2252,7 @@ async function seedDemoData(prisma: PrismaClient): Promise<void> {
             totalAmount: 7450000,
             validUntil: new Date(Date.now() + 10 * 86400 * 1000),
             status: 'ACCEPTED',
-            acceptedAt: new Date('2026-11-08T09:00:00Z'),
+            acceptedAt: new Date(Date.now() - 3 * 86400 * 1000),
           },
         });
 
@@ -2165,8 +2329,8 @@ async function seedDemoData(prisma: PrismaClient): Promise<void> {
             destLat: 10.5221,
             destLng: 107.0185,
             status: 'ACTIVE',
-            plannedStart: new Date('2026-11-11T05:00:00Z'),
-            plannedEnd: new Date('2026-11-12T05:00:00Z'),
+            plannedStart: new Date(Date.now() - 4 * 3600 * 1000),
+            plannedEnd: new Date(Date.now() + 20 * 3600 * 1000),
           },
         });
 
@@ -2182,8 +2346,8 @@ async function seedDemoData(prisma: PrismaClient): Promise<void> {
             freightLegId: leg2.id,
             bookingId: booking1.id,
             status: 'ACTIVE',
-            startAt: new Date('2026-11-11T00:00:00Z'),
-            endAt: new Date('2026-11-13T00:00:00Z'),
+            startAt: new Date(Date.now() - 12 * 3600 * 1000),
+            endAt: new Date(Date.now() + 48 * 3600 * 1000),
             notes: `Đang kéo chặng ICD Long Bình -> Cái Mép (${leg1.legType} hoàn tất)`,
           },
         });
@@ -2438,7 +2602,7 @@ async function seedDemoData(prisma: PrismaClient): Promise<void> {
             orderId: createdOrderIds[0],
             shipmentId: null as string | null,
             expiresAt: new Date(Date.now() + 7 * 86400 * 1000),
-            revokedAt: new Date('2026-11-10T10:00:00Z'),
+            revokedAt: new Date(Date.now() - 36 * 3600 * 1000),
             stateLabel: 'REVOKED (410)',
           },
         ];
@@ -2475,7 +2639,7 @@ async function seedDemoData(prisma: PrismaClient): Promise<void> {
           data: {
             id: detUuid(pfx, 290),
             tenantId: tid,
-            name: 'Dong Nai Heuristic ETA & Route Baseline',
+            name: `Dong Nai Heuristic ETA & Route Baseline (${cfg.codeSuffix})`,
             version: '1.0.0-baseline',
             type: 'VRP_HEURISTIC',
             modelPath: 'workers/ai-worker/src/lib/vrp.ts',

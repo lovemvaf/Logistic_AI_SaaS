@@ -113,12 +113,12 @@ export default function StockAlertsPage() {
     load();
   }, [load]);
 
-  const empty = !loading && (analysis === null || analysis.rows.length === 0);
-
-  const statusLabel = status === 'all' ? 'Tất cả' : status === 'low' ? 'Sắp hết' : 'E hàng';
   const filtered = analysis?.rows.filter((r) =>
     status === 'out' ? r.available === 0 : status === 'low' ? r.available > 0 && r.available <= analysis.lowStockThreshold : true,
   );
+  const empty = !loading && (!filtered || filtered.length === 0);
+
+  const statusLabel = status === 'all' ? 'Tất cả' : status === 'low' ? 'Sắp hết' : 'Hết hàng';
 
   const metrics: EditorialMetric[] = [
     {
@@ -128,7 +128,7 @@ export default function StockAlertsPage() {
       tone: 'warning',
     },
     {
-      label: 'E hàng',
+      label: 'Hết hàng',
       value: formatNumber(analysis?.counts.outOfStock ?? 0),
       meta: 'Không có sẵn để giao',
       tone: 'danger',
@@ -188,35 +188,42 @@ export default function StockAlertsPage() {
                 status === key ? 'bg-accent text-white' : 'text-ink-soft hover:bg-surface-alt hover:text-ink'
               }`}
             >
-              {key === 'all' ? 'Tất cả' : key === 'low' ? 'Sắp hết' : 'E hàng'}
+              {key === 'all' ? 'Tất cả' : key === 'low' ? 'Sắp hết' : 'Hết hàng'}
             </button>
           ))}
         </div>
         <div className="overflow-x-auto rounded-lg border border-line">
-          <TableState
-            loading={loading}
-            empty={empty}
-            error={error ? new Error(error) : undefined}
-            onRetry={load}
-            colSpan={7}
-            emptyContent={<EmptyNote>Không có mặt hàng nào dưới ngưỡng tồn thấp.</EmptyNote>}
-          >
-            <table className="w-full border-collapse">
-              <thead className="border-b border-line bg-surface-alt">
-                <tr>
-                  <th className="px-4 py-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Mã hàng</th>
-                  <th className="px-4 py-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Kho</th>
-                  <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Tồn thực</th>
-                  <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Đã đặt</th>
-                  <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Khả dụng</th>
-                  <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Ngưỡng</th>
-                  <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Thiếu</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-line text-[13px]">
+          <table className="w-full border-collapse">
+            <thead className="border-b border-line bg-surface-alt">
+              <tr>
+                <th className="px-4 py-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Mã hàng</th>
+                <th className="px-4 py-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Kho</th>
+                <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Tồn thực</th>
+                <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Đã đặt</th>
+                <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Khả dụng</th>
+                <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Ngưỡng</th>
+                <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Thiếu</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line text-[13px]">
+              <TableState
+                loading={loading}
+                empty={empty}
+                error={error ? new Error(error) : undefined}
+                onRetry={load}
+                colSpan={7}
+                emptyContent={
+                  <tr>
+                    <td colSpan={7} className="px-4 py-6 text-center text-[13px] text-ink-faint">
+                      Không có mặt hàng nào dưới ngưỡng tồn thấp.
+                    </td>
+                  </tr>
+                }
+              >
                 {filtered?.map((row) => (
                   <tr key={`${row.sku}-${row.warehouseCode}`} className="hover:bg-surface-alt">
                     <td className="px-4 py-2 text-[13px] font-medium text-ink">
+                      <div className="font-mono text-[12px] text-ink">{row.sku}</div>
                       <div className="text-[11px] text-ink-faint">{row.productName}</div>
                     </td>
                     <td className="px-4 py-2 text-[13px] text-ink-soft">
@@ -236,9 +243,9 @@ export default function StockAlertsPage() {
                     </td>
                   </tr>
                 ))}
-              </tbody>
-            </table>
-          </TableState>
+              </TableState>
+            </tbody>
+          </table>
         </div>
         <EmptyNote>
           Ngưỡng tồn thấp {formatNumber(analysis?.lowStockThreshold ?? 0)} đơn vị theo cài đặt tenant. Hàng hết hàng được tính khi tồn khả dụng bằng 0.

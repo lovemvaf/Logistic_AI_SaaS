@@ -189,11 +189,11 @@ export default function PutawayPage() {
             {suggesting ? 'Đang tải…' : 'Tìm vị trí cất'}
           </button>
         </form>
-        <p className="mt-3">
+        <div className="mt-3">
           <EmptyNote>
             Các bin của kho đang hoạt động được đánh giá từ sức chứa (số kg và CBM); kho bảo trì không được đề xuất.
           </EmptyNote>
-        </p>
+        </div>
       </EditorialSection>
 
       {suggestion ? (
@@ -233,28 +233,34 @@ export default function PutawayPage() {
       ) : null}
 
       <EditorialSection eyebrow="Nhật ký" title="Phiếu nhập gần đây">
-        <TableState
-          loading={movLoading}
-          empty={!movLoading && movements.length === 0}
-          error={movError ? new Error(movError) : undefined}
-          onRetry={loadMovements}
-          colSpan={7}
-          emptyContent={<EmptyNote>Chưa có phiếu nhập kho nào được ghi nhận.</EmptyNote>}
-        >
-          <div className="overflow-x-auto rounded-lg border border-line">
-            <table className="w-full border-collapse">
-              <thead className="border-b border-line bg-surface-alt">
-                <tr>
-                  <th className="px-4 py-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">SKU</th>
-                  <th className="px-4 py-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Tên hàng</th>
-                  <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Số lượng</th>
-                  <th className="px-4 py-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Kho</th>
-                  <th className="px-4 py-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Bin</th>
-                  <th className="px-4 py-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Thời gian</th>
-                  <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Tồn sau</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-line text-[13px]">
+        <div className="overflow-x-auto rounded-lg border border-line">
+          <table className="w-full border-collapse">
+            <thead className="border-b border-line bg-surface-alt">
+              <tr>
+                <th className="px-4 py-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">SKU</th>
+                <th className="px-4 py-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Tên hàng</th>
+                <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Số lượng</th>
+                <th className="px-4 py-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Kho</th>
+                <th className="px-4 py-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Bin</th>
+                <th className="px-4 py-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Thời gian</th>
+                <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Tồn sau</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line text-[13px]">
+              <TableState
+                loading={movLoading}
+                empty={!movLoading && movements.length === 0}
+                error={movError ? new Error(movError) : undefined}
+                onRetry={loadMovements}
+                colSpan={7}
+                emptyContent={
+                  <tr>
+                    <td colSpan={7} className="px-4 py-6 text-center text-[13px] text-ink-faint">
+                      Chưa có phiếu nhập kho nào được ghi nhận.
+                    </td>
+                  </tr>
+                }
+              >
                 {movements.map((row) => (
                   <tr key={row.id} className="hover:bg-surface-alt">
                     <td className="px-4 py-2 text-[13px] font-medium text-ink">{row.sku}</td>
@@ -266,10 +272,10 @@ export default function PutawayPage() {
                     <td className="px-4 py-2 text-right font-semibold tabular-nums text-ink">{row.balanceAfter}</td>
                   </tr>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        </TableState>
+              </TableState>
+            </tbody>
+          </table>
+        </div>
       </EditorialSection>
 
       <EditorialSection title="Hướng dẫn">

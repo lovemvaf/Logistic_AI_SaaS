@@ -24,7 +24,7 @@ export interface MapboxWrapperProps {
   onMarkerClick?: (markerId: string) => void;
 }
 
-export const MapboxWrapper: React.FC<MapboxWrapperProps> = ({
+export function MapboxWrapper({
   center,
   zoom,
   token,
@@ -32,7 +32,7 @@ export const MapboxWrapper: React.FC<MapboxWrapperProps> = ({
   polylines = [],
   style = 'mapbox://styles/mapbox/streets-v12',
   onMarkerClick,
-}) => {
+}: MapboxWrapperProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const [mapboxLoaded, setMapboxLoaded] = useState(false);
@@ -175,4 +175,4 @@ export const MapboxWrapper: React.FC<MapboxWrapperProps> = ({
       style={{ width: '100%', height: '100%' }}
     />
   );
-};
+}

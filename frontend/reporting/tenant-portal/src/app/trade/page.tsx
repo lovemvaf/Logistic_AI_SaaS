@@ -417,24 +417,32 @@ export default function TradePage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-line bg-surface">
-              {docs.map((d) => (
-                <tr key={d.id}>
-                  <td className="px-3 py-2 font-mono text-[11px]">{d.docType}</td>
-                  <td className="px-3 py-2">
-                    <div className="font-mono">{d.docNumber}</div>
-                    <div className="text-[11px] text-ink-faint">{d.fileName} (v{d.versions?.length || 1})</div>
-                  </td>
-                  <td className="px-3 py-2 font-mono text-[11px]">{d.booking?.bookingNo || '—'}</td>
-                  <td className="px-3 py-2">
-                    <StatusLabel tone={d.status === 'VERIFIED' ? 'success' : d.status === 'MISMATCH_FOUND' || d.status === 'REJECTED' ? 'danger' : 'info'}>
-                      {d.status}
-                    </StatusLabel>
-                  </td>
-                  <td className="px-3 py-2 text-[11px] text-ink-soft">
-                    {d.discrepanciesJson ? JSON.stringify(d.discrepanciesJson).slice(0, 140) : 'Hợp lệ'}
+              {docs.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-3 py-6 text-center text-[12px] text-ink-faint">
+                    {loading ? 'Đang tải chứng từ XNK...' : 'Chưa có chứng từ XNK nào được tải lên.'}
                   </td>
                 </tr>
-              ))}
+              ) : (
+                docs.map((d) => (
+                  <tr key={d.id}>
+                    <td className="px-3 py-2 font-mono text-[11px]">{d.docType}</td>
+                    <td className="px-3 py-2">
+                      <div className="font-mono">{d.docNumber}</div>
+                      <div className="text-[11px] text-ink-faint">{d.fileName} (v{d.versions?.length || 1})</div>
+                    </td>
+                    <td className="px-3 py-2 font-mono text-[11px]">{d.booking?.bookingNo || '—'}</td>
+                    <td className="px-3 py-2">
+                      <StatusLabel tone={d.status === 'VERIFIED' ? 'success' : d.status === 'MISMATCH_FOUND' || d.status === 'REJECTED' ? 'danger' : 'info'}>
+                        {d.status}
+                      </StatusLabel>
+                    </td>
+                    <td className="px-3 py-2 text-[11px] text-ink-soft">
+                      {d.discrepanciesJson ? JSON.stringify(d.discrepanciesJson).slice(0, 140) : 'Hợp lệ'}
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

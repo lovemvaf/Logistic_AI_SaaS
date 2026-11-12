@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import api from '@/lib/api';
 import {
   EditorialPageHeader,
@@ -9,6 +10,18 @@ import {
   StatusLabel,
 } from 'ui-kit';
 import { Button, Modal } from 'ui-components';
+
+const DongNaiRouteMap = dynamic(
+  () => import('map-components').then((m) => m.DongNaiRouteMap),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-[280px] items-center justify-center rounded-lg border border-line bg-surface-alt text-[12px] text-ink-faint">
+        Đang tải bản đồ hành lang Đồng Nai...
+      </div>
+    ),
+  },
+);
 
 type DeliveryItem = {
   id: string;
@@ -77,6 +90,7 @@ export default function DriverSimulatorPage() {
   const drawingRef = useRef(false);
   const initializedTripRef = useRef(false);
   const [hasSigned, setHasSigned] = useState(false);
+  const [showCorridorMap, setShowCorridorMap] = useState(true);
 
   const loadAll = useCallback(async () => {
     try {
@@ -86,7 +100,10 @@ export default function DriverSimulatorPage() {
         api.get('/logistics/geofences'),
         api.get('/logistics/sos'),
       ]);
-      const tripList: TripItem[] = Array.isArray(tRes.data?.data) ? tRes.data.data : [];
+      const rawTrips: TripItem[] = Array.isArray(tRes.data?.data) ? tRes.data.data : [];
+      const tripList = [...rawTrips].sort(
+        (a, b) => (b.deliveries?.length || 0) - (a.deliveries?.length || 0),
+      );
       setTrips(tripList);
       setWallet(wRes.data || null);
       setGeofences(Array.isArray(gRes.data?.data) ? gRes.data.data : []);
@@ -95,7 +112,9 @@ export default function DriverSimulatorPage() {
       if (tripList.length > 0 && !initializedTripRef.current) {
         initializedTripRef.current = true;
         const preferredTrip =
-          tripList.find((t) => (t.deliveries?.length || 0) > 0) || tripList[0];
+          tripList.find((t) => t.deliveries?.some((d) => d.status !== 'DELIVERED')) ||
+          tripList.find((t) => (t.deliveries?.length || 0) > 0) ||
+          tripList[0];
         setSelectedTripId(preferredTrip.id);
         const preferredDel =
           preferredTrip.deliveries?.find((d) => d.status !== 'DELIVERED') ||
@@ -371,7 +390,7 @@ export default function DriverSimulatorPage() {
           },
           {
             label: 'COD đang giữ (Ví)',
-            value: `${Number(wallet?.pendingCodTotal || 0).toLocaleString('vi-VN')} d`,
+            value: `${Number(wallet?.pendingCodTotal || 0).toLocaleString('vi-VN')} đ`,
             meta: `${sosList.filter((s) => s.status === 'ACTIVE').length} SOS đang mở`,
             tone: sosList.some((s) => s.status === 'ACTIVE') ? 'danger' : 'success',
           },
@@ -565,9 +584,28 @@ export default function DriverSimulatorPage() {
                   ))}
                 </select>
                 {(currentTrip?.deliveries || []).length === 0 ? (
-                  <span className="mt-1 block text-[11px] text-amber-700">
-                    Chuyến này chưa có điểm giao nào. Hãy chọn chuyến có điểm giao trong mục Chọn chuyến vận tải.
-                  </span>
+                  <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 rounded border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-800">
+                    <span>Chuyến này chưa có điểm giao nào. Hãy chọn chuyến có điểm giao hoặc chuyển nhanh.</span>
+                    {(() => {
+                      const withDeliveries = trips.find((t) => (t.deliveries?.length || 0) > 0);
+                      return withDeliveries ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedTripId(withDeliveries.id);
+                            const nextDel =
+                              withDeliveries.deliveries?.find((d) => d.status !== 'DELIVERED') ||
+                              withDeliveries.deliveries?.[0];
+                            setSelectedDeliveryId(nextDel?.id || '');
+                            setCodInput(String(nextDel?.codAmountExpected || 0));
+                          }}
+                          className="font-semibold text-accent underline hover:no-underline"
+                        >
+                          Chuyển sang {withDeliveries.tripCode} ({withDeliveries.deliveries.length} điểm)
+                        </button>
+                      ) : null;
+                    })()}
+                  </div>
                 ) : null}
               </label>
 
@@ -696,6 +734,61 @@ export default function DriverSimulatorPage() {
           </div>
         </div>
       </Modal>
+
+      <EditorialSection
+        eyebrow="Hành lang GPS Đồng Nai"
+        title="Bản đồ tương tác vị trí xe & điểm đệm Offline"
+        action={
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setShowCorridorMap((v) => !v)}
+          >
+            {showCorridorMap ? 'Thu gọn bản đồ' : 'Mở bản đồ hành lang'}
+          </Button>
+        }
+      >
+        {showCorridorMap ? (
+          <DongNaiRouteMap
+            title={`Vị trí mô phỏng · ${currentTrip?.tripCode || 'Hành lang Đồng Nai'}`}
+            subtitle={`Điểm GPS hiện tại: ${currentWp.label} (${currentWp.lat}, ${currentWp.lng}) · ${offlineQueue.length} điểm chờ đồng bộ`}
+            waypoints={DONG_NAI_WAYPOINTS.map((w) => ({ lat: w.lat, lng: w.lng, label: w.label }))}
+            stops={DONG_NAI_WAYPOINTS.map((w, idx) => ({
+              id: w.id,
+              name: w.label,
+              lat: w.lat,
+              lng: w.lng,
+              status: idx < wpIndex ? 'COMPLETED' : idx === wpIndex ? 'CURRENT' : 'PENDING',
+              sequence: idx + 1,
+            }))}
+            currentPosition={{
+              id: currentTrip?.vehiclePlate || 'SIM-TRUCK',
+              lat: currentWp.lat,
+              lng: currentWp.lng,
+              plate: currentTrip?.vehiclePlate || '60C-DN3PL01',
+              label: currentWp.label,
+              status: offlineMode ? 'OFFLINE' : 'IN_TRANSIT',
+              speedKmh: 44 + (wpIndex * 3),
+            }}
+            offlinePoints={offlineQueue.map((pt, idx) => ({
+              id: `off-${idx}`,
+              lat: pt.lat,
+              lng: pt.lng,
+              label: pt.label,
+            }))}
+            progressPercent={Math.round(((wpIndex + 1) / DONG_NAI_WAYPOINTS.length) * 100)}
+            isSimulatedRoute
+            showAllHubs
+            showCorridors
+            onSelectStop={(id) => {
+              const foundIdx = DONG_NAI_WAYPOINTS.findIndex((w) => w.id === id);
+              if (foundIdx >= 0) void pushOrQueueGps(foundIdx);
+            }}
+            height={300}
+          />
+        ) : null}
+      </EditorialSection>
     </div>
   );
 }

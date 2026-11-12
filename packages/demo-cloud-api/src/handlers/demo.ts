@@ -240,7 +240,7 @@ export async function handleDemoRoutes(ctx: ApiContext): Promise<ApiResult | nul
 
     const rawToken = `handoff_${crypto.randomBytes(24).toString('hex')}`;
     const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
-    const expiresAt = new Date(Date.now() + 90 * 1000);
+    const expiresAt = new Date(Date.now() + 300 * 1000);
 
     await withPlatform(async (tx: any) => {
       await tx.demoHandoffToken.create({
@@ -319,7 +319,7 @@ export async function handleDemoRoutes(ctx: ApiContext): Promise<ApiResult | nul
             record.error === 'ALREADY_USED'
               ? 'Liên kết chuyển cổng chỉ dùng được một lần và đã được sử dụng.'
               : record.error === 'EXPIRED'
-                ? 'Liên kết chuyển cổng đã hết hạn (90s). Vui lòng tạo lại.'
+                ? 'Liên kết chuyển cổng đã hết hạn (300s). Vui lòng tạo lại.'
                 : 'Không tìm thấy token chuyển cổng.',
         },
       };

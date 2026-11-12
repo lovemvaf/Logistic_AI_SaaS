@@ -39,13 +39,13 @@ const createPulsingDot = (color: string): string => {
   `;
 };
 
-export const LiveRadar: React.FC<LiveRadarProps> = ({
+export function LiveRadar({
   center,
   zoom,
   vehicles,
   onVehicleClick,
   refreshInterval = 5000,
-}) => {
+}: LiveRadarProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const markersRef = useRef<Map<string, any>>(new Map());
@@ -171,4 +171,4 @@ export const LiveRadar: React.FC<LiveRadarProps> = ({
       </div>
     </div>
   );
-};
+}

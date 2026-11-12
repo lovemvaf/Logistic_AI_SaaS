@@ -128,39 +128,51 @@ export default function LogisticsReportsPage() {
       />
 
       <EditorialSection title="Giao hàng đúng hạn">
-        <DataState loading={loading} empty={!loading && (!onTime || onTime.groups.length === 0)}>
-          <TableState
-            loading={loading}
-            empty={!loading && (!onTime || onTime.groups.length === 0)}
-            error={error || undefined}
-            onRetry={total}
-            colSpan={4}
-            emptyContent={
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-line text-[13px]">
+            <thead className="bg-surface-alt">
               <tr>
-                <td colSpan={4} className="px-3 py-6 text-center text-ink-faint">
-                  Chưa có dữ liệu vận hành đúng hạn.
-                </td>
+                <th className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Tuyến / Khu vực</th>
+                <th className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Đúng hạn</th>
+                <th className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Tiến độ</th>
+                <th className="px-3 py-2 text-right text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Tỷ lệ</th>
               </tr>
-            }
-          >
-            {onTime &&
-              onTime.groups.map((g) => (
-                <tr key={g.id} className="hover:bg-surface-alt">
-                  <td className="px-3 py-2 font-medium text-ink">{g.name}</td>
-                  <td className="pr-3 py-2 tabular-nums">{g.onTime} / {g.total}</td>
-                  <td className="pr-3 py-2">
-                    <div className="w-full h-[6px] bg-surface border border-line overflow-hidden rounded-full">
-                      <div
-                        className="h-full rounded-full bg-success"
-                        style={{ width: `${g.total === 0 ? 0 : (g.onTime / g.total) * 100}%` }}
-                      />
-                    </div>
-                  </td>
-                  <td className="pr-3 py-2 tabular-nums">{g.rate}%</td>
-                </tr>
-              ))}
-          </TableState>
-        </DataState>
+            </thead>
+            <tbody className="divide-y divide-line">
+              <TableState
+                loading={loading}
+                empty={!loading && (!onTime || onTime.groups.length === 0)}
+                error={error ? new Error(error) : undefined}
+                onRetry={total}
+                colSpan={4}
+                emptyContent={
+                  <tr>
+                    <td colSpan={4} className="px-3 py-6 text-center text-ink-faint">
+                      Chưa có dữ liệu vận hành đúng hạn.
+                    </td>
+                  </tr>
+                }
+              >
+                {onTime &&
+                  onTime.groups.map((g) => (
+                    <tr key={g.id} className="hover:bg-surface-alt">
+                      <td className="px-3 py-2 font-medium text-ink">{g.name}</td>
+                      <td className="px-3 py-2 tabular-nums">{g.onTime} / {g.total}</td>
+                      <td className="px-3 py-2 w-[35%]">
+                        <div className="w-full h-[6px] bg-surface border border-line overflow-hidden rounded-full">
+                          <div
+                            className="h-full rounded-full bg-success"
+                            style={{ width: `${g.total === 0 ? 0 : (g.onTime / g.total) * 100}%` }}
+                          />
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">{g.rate}%</td>
+                    </tr>
+                  ))}
+              </TableState>
+            </tbody>
+          </table>
+        </div>
       </EditorialSection>
 
       <EditorialSection title="Chi phí">
@@ -177,7 +189,7 @@ export default function LogisticsReportsPage() {
               <TableState
                 loading={loading}
                 empty={!loading && (!costs || costs.byCategory.length === 0)}
-                error={error || undefined}
+                error={error ? new Error(error) : undefined}
                 onRetry={total}
                 colSpan={3}
                 emptyContent={
@@ -191,9 +203,9 @@ export default function LogisticsReportsPage() {
                 {costs &&
                   costs.byCategory.map((c) => (
                     <tr key={c.category} className="hover:bg-surface-alt">
-                      <td className="pr-3 py-2 font-medium text-ink">{c.category}</td>
-                      <td className="pr-3 py-2 text-right tabular-nums">{formatCurrency(c.amount)}</td>
-                      <td className="pr-3 py-2 w-[40%]">
+                      <td className="px-3 py-2 font-medium text-ink">{c.category}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(c.amount)}</td>
+                      <td className="px-3 py-2 w-[40%]">
                         <div className="w-full h-[6px] bg-surface border border-line rounded-full">
                           <div
                             className="h-full rounded-full bg-accent"
@@ -209,8 +221,8 @@ export default function LogisticsReportsPage() {
               <tfoot>
                 <tr className="border-t border-line bg-surface">
                   <td className="px-3 py-2 font-medium text-ink">Tổng chi phí</td>
-                  <td className="pr-3 py-2 text-right tabular-nums font-semibold text-ink">{formatCurrency(costs.total)}</td>
-                  <td className="pr-3 py-2"></td>
+                  <td className="px-3 py-2 text-right tabular-nums font-semibold text-ink">{formatCurrency(costs.total)}</td>
+                  <td className="px-3 py-2"></td>
                 </tr>
               </tfoot>
             ) : null}
@@ -219,47 +231,64 @@ export default function LogisticsReportsPage() {
       </EditorialSection>
 
       <EditorialSection title="Xe đội">
-        <DataState loading={loading} empty={!loading && (!fleet || fleet.byVehicle.length === 0)}>
-          <TableState
-            loading={loading}
-            empty={!loading && (!fleet || fleet.byVehicle.length === 0)}
-            error={error || undefined}
-            onRetry={total}
-            colSpan={9}
-            emptyContent={
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-line text-[13px]">
+            <thead className="bg-surface-alt">
               <tr>
-                <td colSpan={9} className="px-3 py-6 text-center text-ink-faint">
-                  Chưa có dữ liệu đội xe.
-                </td>
+                <th className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Biển số</th>
+                <th className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Loại xe</th>
+                <th className="px-3 py-2 text-right text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Chuyến</th>
+                <th className="px-3 py-2 text-right text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Quãng đường</th>
+                <th className="px-3 py-2 text-right text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Nhiên liệu</th>
+                <th className="px-3 py-2 text-right text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Bảo trì</th>
+                <th className="px-3 py-2 text-right text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Doanh thu</th>
+                <th className="px-3 py-2 text-right text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Khả dụng</th>
+                <th className="px-3 py-2 text-right text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Tỷ lệ</th>
               </tr>
-            }
-          >
-            {fleet &&
-              fleet.byVehicle.map((v) => (
-                <tr key={v.id} className="hover:bg-surface-alt">
-                  <td className="pr-3 py-2 font-medium text-ink">{v.plate}</td>
-                  <td className="pr-3 py-2">{v.type}</td>
-                  <td className="pr-3 py-2 text-right tabular-nums">{v.trips}</td>
-                  <td className="pr-3 py-2 text-right tabular-nums">{formatNumber(v.distanceKm)} km</td>
-                  <td className="pr-3 py-2 text-right tabular-nums">{formatCurrency(v.fuelCost)}</td>
-                  <td className="pr-3 py-2 text-right tabular-nums">{formatCurrency(v.maintenanceCost)}</td>
-                  <td className="pr-3 py-2 text-right tabular-nums">{formatCurrency(v.revenue)}</td>
-                  <td className="pr-3 py-2">
-                    <div className="w-[60px] h-[6px] bg-surface border border-line rounded-full ml-auto">
-                      <div
-                        className="h-full rounded-full"
-                        style={{
-                          width: `${v.utilizableDays === 0 ? 0 : (v.utilizableDays / Math.max(1, v.utilizableDays + v.downtimeDays)) * 100}%`,
-                          backgroundColor: (v.utilizableDays / Math.max(1, v.utilizableDays + v.downtimeDays)) >= 0.8 ? '#3F6B4F' : '#8A5D28',
-                        }}
-                      />
-                    </div>
-                  </td>
-                  <td className="pr-3 py-2 text-right tabular-nums">{v.rate}</td>
-                </tr>
-              ))}
-          </TableState>
-        </DataState>
+            </thead>
+            <tbody className="divide-y divide-line">
+              <TableState
+                loading={loading}
+                empty={!loading && (!fleet || fleet.byVehicle.length === 0)}
+                error={error ? new Error(error) : undefined}
+                onRetry={total}
+                colSpan={9}
+                emptyContent={
+                  <tr>
+                    <td colSpan={9} className="px-3 py-6 text-center text-ink-faint">
+                      Chưa có dữ liệu đội xe.
+                    </td>
+                  </tr>
+                }
+              >
+                {fleet &&
+                  fleet.byVehicle.map((v) => (
+                    <tr key={v.id} className="hover:bg-surface-alt">
+                      <td className="px-3 py-2 font-medium text-ink">{v.plate}</td>
+                      <td className="px-3 py-2">{v.type}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{v.trips}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{formatNumber(v.distanceKm)} km</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(v.fuelCost)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(v.maintenanceCost)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(v.revenue)}</td>
+                      <td className="px-3 py-2">
+                        <div className="w-[60px] h-[6px] bg-surface border border-line rounded-full ml-auto">
+                          <div
+                            className="h-full rounded-full"
+                            style={{
+                              width: `${v.utilizableDays === 0 ? 0 : (v.utilizableDays / Math.max(1, v.utilizableDays + v.downtimeDays)) * 100}%`,
+                              backgroundColor: (v.utilizableDays / Math.max(1, v.utilizableDays + v.downtimeDays)) >= 0.8 ? '#3F6B4F' : '#8A5D28',
+                            }}
+                          />
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">{v.rate}</td>
+                    </tr>
+                  ))}
+              </TableState>
+            </tbody>
+          </table>
+        </div>
       </EditorialSection>
     </div>
   );

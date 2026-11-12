@@ -448,7 +448,8 @@ export default function ClientFreightPage() {
                           {q.rfq ? `${q.rfq.originName} -> ${q.rfq.destName}` : q.rfqId}
                         </td>
                         <td className="py-2.5 px-3 tabular-nums font-medium text-ink">
-                          {formatCurrency(Number(q.totalAmount))} {q.currency || 'VND'}
+                          {formatCurrency(Number(q.totalAmount))}
+                          {q.currency && q.currency !== 'VND' ? ` ${q.currency}` : ''}
                         </td>
                         <td className="py-2.5 px-3">
                           <StatusLabel tone={STATUS_TONE[q.status] ?? 'neutral'}>{q.status}</StatusLabel>
@@ -679,7 +680,8 @@ export default function ClientFreightPage() {
                       <tr key={inv.id} className="border-b border-line/80">
                         <td className="py-2.5 pr-3 font-mono font-medium text-ink">{inv.invoiceNo}</td>
                         <td className="py-2.5 px-3 tabular-nums text-ink">
-                          {formatCurrency(Number(inv.totalAmount))} {inv.currency}
+                          {formatCurrency(Number(inv.totalAmount))}
+                          {inv.currency && inv.currency !== 'VND' ? ` ${inv.currency}` : ''}
                         </td>
                         <td className="py-2.5 px-3 tabular-nums text-ink-soft">
                           {formatCurrency(Number(inv.paidAmount ?? 0))}

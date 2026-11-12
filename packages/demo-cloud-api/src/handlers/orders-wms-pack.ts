@@ -29,7 +29,14 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
       if (ctx.session!.role === 'CUSTOMER_CLIENT' && ctx.session!.clientId) {
         where.clientId = ctx.session!.clientId;
       }
-      if (status && status !== 'ALL') where.status = status;
+      if (status && status !== 'ALL') {
+        if (status === 'UNASSIGNED') {
+          where.driverId = null;
+          where.status = { in: ['NEW', 'PENDING', 'IN_QUEUE'] };
+        } else {
+          where.status = status;
+        }
+      }
       if (search) {
         where.OR = [
           { trackingCode: { contains: search, mode: 'insensitive' } },
@@ -409,8 +416,35 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
     const tid = getTenantId(ctx);
     if (method === 'GET') {
       if (path === '/warehouses/bins') {
-        const bins = await withTenant(tid, async (tx) => tx.bin.findMany({ include: { rack: true } }));
-        return { status: 200, body: { data: bins, meta: { total: bins.length } } };
+        const bins = await withTenant(tid, async (tx) =>
+          tx.bin.findMany({
+            include: { rack: { include: { zone: true } }, warehouse: true, inventory: true },
+            orderBy: { barcode: 'asc' },
+          }),
+        );
+        return {
+          status: 200,
+          body: {
+            data: bins.map((b) => {
+              const totalUnits = b.inventory.reduce((s, inv) => s + inv.quantityOnHand, 0);
+              const maxWeightKg = num(b.maxWeightKg, 1200);
+              const maxVolumeCbm = num(b.maxVolumeCbm, 12.5);
+              const usedWeightKg = Math.min(maxWeightKg, Math.round(totalUnits * 1.4));
+              return {
+                ...b,
+                maxWeight: maxWeightKg,
+                code: b.barcode,
+                zone: b.rack?.zone?.code || 'Z-STR-DN3PL',
+                warehouseName: b.warehouse?.name || 'Kho ICD Long Bình',
+                usedWeightKg,
+                maxWeightKg,
+                usedVolumeCbm: Math.min(maxVolumeCbm, Math.round(totalUnits * 0.015 * 100) / 100),
+                maxVolumeCbm,
+              };
+            }),
+            meta: { total: bins.length },
+          },
+        };
       }
       const whs = await withTenant(tid, async (tx) =>
         tx.warehouse.findMany({ where: { deletedAt: null }, include: { _count: { select: { Bin: true, Inventory: true } } } }),
@@ -442,6 +476,33 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
       );
       return { status: 201, body: wh };
     }
+  }
+
+  const whByIdMatch = path.match(/^\/warehouses\/([^/]+)$/);
+  if (whByIdMatch && method === 'GET' && whByIdMatch[1] !== 'bins') {
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
+    const tid = getTenantId(ctx);
+    const wh = await withTenant(tid, async (tx) =>
+      tx.warehouse.findFirst({
+        where: { OR: [{ id: whByIdMatch[1] }, { code: whByIdMatch[1] }], deletedAt: null },
+        include: {
+          zones: { include: { racks: { include: { bins: true } } } },
+          Bin: { include: { rack: true } },
+          Inventory: { include: { product: true } },
+        },
+      }),
+    );
+    if (!wh) return { status: 404, body: { message: 'Không tìm thấy kho.' } };
+    return {
+      status: 200,
+      body: {
+        ...wh,
+        bins: wh.Bin,
+        inventoryCount: wh.Inventory.length,
+        createdAt: iso(wh.createdAt),
+      },
+    };
   }
 
   if (path === '/inventory' && method === 'GET') {
@@ -482,12 +543,16 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
     if (roleErr) return roleErr;
     const tid = getTenantId(ctx);
     const data = await withTenant(tid, async (tx) => {
-      const rows = await tx.inventory.findMany();
-      const totalSkus = await tx.product.count({ where: { deletedAt: null } });
+      const [rows, totalSkus, warehouses] = await Promise.all([
+        tx.inventory.findMany(),
+        tx.product.count({ where: { deletedAt: null } }),
+        tx.warehouse.count({ where: { deletedAt: null } }),
+      ]);
       const totalUnits = rows.reduce((s, r) => s + r.quantityOnHand, 0);
       const lowStockCount = rows.filter((r) => r.quantityOnHand <= 5).length;
+      const outOfStockSkus = rows.filter((r) => r.quantityOnHand <= 0).length;
       const expiringCount = rows.filter((r) => r.expiryDate && r.expiryDate.getTime() < Date.now() + 14 * 86400 * 1000).length;
-      return { totalSkus, totalUnits, lowStockCount, expiringCount };
+      return { totalSkus, totalUnits, lowStockCount, outOfStockSkus, expiringCount, warehouses, warehouseCount: warehouses };
     });
     return { status: 200, body: data };
   }
@@ -862,6 +927,42 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
     };
   }
 
+  const parseScanBarcode = (raw: string) => {
+    const clean = String(raw || '').trim();
+    const idx = clean.indexOf(':');
+    if (idx > 0) {
+      return { packCode: clean.slice(0, idx), sku: clean.slice(idx + 1) };
+    }
+    return { packCode: null as string | null, sku: clean };
+  };
+
+  const mapScanResult = (raw: string): 'MATCH' | 'MISMATCH' | 'OVERRIDE' => {
+    if (raw === 'OVERRIDDEN' || raw === 'OVERRIDE') return 'OVERRIDE';
+    if (raw === 'MISMATCHED' || raw === 'MISMATCH') return 'MISMATCH';
+    return 'MATCH';
+  };
+
+  const formatScanLogEntry = (x: any, fallbackOrder?: any) => {
+    const parsed = parseScanBarcode(x.barcode);
+    const resolvedPackCode = parsed.packCode || fallbackOrder?.trackingCode || 'SLG-DEMO-DN3PL-0001';
+    const expectedSku = fallbackOrder?.items?.[0]?.product?.sku || 'SKU-DN3PL-IC8542';
+    const estWeightKg = num(fallbackOrder?.items?.[0]?.product?.weightKg, 1.4) * (fallbackOrder?.items?.[0]?.quantity || 1);
+    return {
+      id: x.id,
+      packCode: resolvedPackCode,
+      trackingCode: resolvedPackCode,
+      sku: parsed.sku || expectedSku,
+      expectedSku,
+      result: mapScanResult(x.result),
+      weight: Math.round(estWeightKg * 100) / 100,
+      boxType: 'MEDIUM' as const,
+      stationId: x.deviceId || 'STN-PACK-01',
+      staffId: x.actorId || ctx.session!.sub,
+      scannedAt: iso(x.createdAt),
+      createdAt: iso(x.createdAt),
+    };
+  };
+
   if (path === '/inventory/ops/pack-log/scan' && method === 'POST') {
     const roleErr = assertInternalRole(ctx);
     if (roleErr) return roleErr;
@@ -896,11 +997,12 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
         (scanned === expectedSku || scanned === expectedBarcode) &&
         (confidence === undefined || confidence >= 0.6);
 
+      const resolvedCode = ord?.trackingCode || packCode;
       await tx.scanLog.create({
         data: {
           tenantId: tid,
           warehouseId: wh!.id,
-          barcode: scanned || 'UNKNOWN',
+          barcode: resolvedCode ? `${resolvedCode}:${scanned || 'UNKNOWN'}` : (scanned || 'UNKNOWN'),
           result: isMatch ? 'MATCHED' : 'MISMATCHED',
           deviceId: 'STN-PACK-01',
           actorId: ctx.session!.sub,
@@ -1033,21 +1135,32 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
     const tid = getTenantId(ctx);
     if (method === 'GET') {
       const rows = await withTenant(tid, async (tx) =>
-        tx.scanLog.findMany({ where: { result: 'MISMATCHED' }, include: { actor: true }, orderBy: { createdAt: 'desc' }, take: 30 }),
+        tx.scanLog.findMany({
+          where: { result: { in: ['MISMATCHED', 'OVERRIDDEN'] } },
+          include: { actor: true },
+          orderBy: { createdAt: 'desc' },
+          take: 30,
+        }),
       );
       return {
         status: 200,
         body: {
-          data: rows.map((s) => ({
-            id: s.id,
-            packCode: s.barcode,
-            scannedSku: s.barcode,
-            expectedSku: 'SKU-DN3PL-IC8542',
-            reason: 'MISMATCHED_BARCODE',
-            status: 'RESOLVED',
-            staffName: s.actor?.fullName || 'Pack Staff',
-            createdAt: iso(s.createdAt),
-          })),
+          data: rows.map((s) => {
+            const parsed = parseScanBarcode(s.barcode);
+            const code = parsed.packCode || 'SLG-DEMO-DN3PL-0001';
+            return {
+              id: s.id,
+              packCode: code,
+              trackingCode: code,
+              orderSku: 'SKU-DN3PL-IC8542',
+              expectedSku: 'SKU-DN3PL-IC8542',
+              scannedSku: parsed.sku || s.barcode,
+              reason: s.result === 'OVERRIDDEN' ? 'Đã thay thế thủ công tại bàn đóng gói' : 'MISMATCHED_BARCODE',
+              status: s.result === 'OVERRIDDEN' ? 'APPROVED' : 'PENDING',
+              staffName: s.actor?.fullName || 'Pack Staff',
+              createdAt: iso(s.createdAt),
+            };
+          }),
         },
       };
     }
@@ -1099,7 +1212,7 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
         },
       };
     }
-    return { status: 200, body: { ok: true, id: path.split('/').pop(), status: body?.status || 'RESOLVED' } };
+    return { status: 200, body: { ok: true, id: path.split('/').pop(), status: body?.status || 'APPROVED' } };
   }
 
   if (path === '/inventory/ops/pack-log/predict' && method === 'POST') {
@@ -1121,9 +1234,73 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
     if (roleErr) return roleErr;
     const tid = getTenantId(ctx);
     const logs = await withTenant(tid, async (tx) =>
-      tx.scanLog.findMany({ where: { result: 'MISMATCHED' }, orderBy: { createdAt: 'desc' }, take: 15 }),
+      tx.scanLog.findMany({ where: { result: { in: ['MISMATCHED', 'OVERRIDDEN'] } }, orderBy: { createdAt: 'desc' }, take: 15 }),
     );
-    return { status: 200, body: logs };
+    const formatted = logs.map((l, idx) => {
+      const parsed = parseScanBarcode(l.barcode);
+      const code = parsed.packCode || `SLG-DEMO-DN3PL-000${(idx % 4) + 1}`;
+      const isVolumetric = idx % 2 === 1;
+      return {
+        id: l.id,
+        kind: isVolumetric ? ('VOLUMETRIC' as const) : ('SKU_MISMATCH' as const),
+        severity: l.result === 'MISMATCHED' ? ('high' as const) : ('medium' as const),
+        packCode: code,
+        trackingCode: code,
+        message: isVolumetric
+          ? `Kiện ${code} ghi nhận chênh lệch trọng lượng >10% so với định mức chuẩn tại cân STN-PACK-01.`
+          : `Phát hiện quét ${parsed.sku || l.barcode} khác với SKU dự kiến trên kiện ${code}.`,
+        recommendation: isVolumetric
+          ? 'Kiểm tra lại vật liệu chèn lót và cân hiệu chuẩn trước khi dán tem niêm phong.'
+          : 'Mở hộp kiểm tra tem SKU thực tế và xác nhận đính chính tại bàn đóng gói.',
+        createdAt: iso(l.createdAt),
+      };
+    });
+    return { status: 200, body: formatted };
+  }
+
+  const packByCodeMatch = path.match(/^\/inventory\/ops\/pack-log\/([^/]+)$/);
+  if (packByCodeMatch && method === 'GET') {
+    const code = decodeURIComponent(packByCodeMatch[1]);
+    if (!['next', 'scan', 'summary', 'predict', 'anomalies'].includes(code)) {
+      const roleErr = assertInternalRole(ctx);
+      if (roleErr) return roleErr;
+      const tid = getTenantId(ctx);
+      const ord = await withTenant(tid, async (tx) =>
+        tx.order.findFirst({
+          where: { OR: [{ trackingCode: { equals: code, mode: 'insensitive' } }, { id: code }], deletedAt: null },
+          include: { items: { include: { product: true } } },
+        }),
+      );
+      if (!ord) return { status: 404, body: { message: `Không tìm thấy kiện hàng "${code}".` } };
+      const item = ord.items[0];
+      const estWeightKg = num(item?.product?.weightKg, 1.4) * (item?.quantity || 1);
+      return {
+        status: 200,
+        body: {
+          id: ord.id,
+          packCode: ord.trackingCode,
+          trackingCode: ord.trackingCode,
+          recipientName: ord.recipientName,
+          recipientPhone: ord.recipientPhone,
+          recipientAddress: ord.recipientAddress,
+          expectedSku: item?.product?.sku || 'SKU-DN3PL-IC8542',
+          expectedBarcode: item?.product?.barcode || '893850300001',
+          expectedQuantity: item?.quantity || 1,
+          estimatedWeight: estWeightKg,
+          expectedWeightGrams: Math.round(estWeightKg * 1000),
+          quantity: item?.quantity || 1,
+          productName: item?.product?.name || 'Vi mạch điều khiển CNC AMATA-8542',
+          boxType: 'MEDIUM',
+          priority: 'HIGH',
+          stationId: 'STN-PACK-01',
+          scheduledAt: iso(ord.estimatedDeliveryDate || ord.createdAt),
+          status: ord.status === 'NEW' ? 'PENDING' : ord.status,
+          createdAt: iso(ord.createdAt),
+          updatedAt: iso(ord.updatedAt),
+          sealedAt: ord.status === 'PACKED' ? iso(ord.updatedAt) : null,
+        },
+      };
+    }
   }
 
   if (path.startsWith('/wms/packing-sessions')) {
@@ -1131,48 +1308,63 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
     if (roleErr) return roleErr;
     const tid = getTenantId(ctx);
     if (method === 'GET' && path === '/wms/packing-sessions') {
-      const [shifts, logs, scans] = await withTenant(tid, async (tx) =>
+      const [shifts, logs, scans, orders] = await withTenant(tid, async (tx) =>
         Promise.all([
           tx.staffShift.findMany({ include: { staff: true, warehouse: true }, orderBy: { shiftStart: 'desc' } }),
           tx.packStationLog.findMany({ orderBy: { createdAt: 'desc' } }),
           tx.scanLog.findMany({ orderBy: { createdAt: 'desc' }, take: 30 }),
+          tx.order.findMany({ where: { deletedAt: null }, include: { items: { include: { product: true } } }, take: 20 }),
         ]),
       );
+      const orderByCode = new Map(orders.map((o) => [o.trackingCode, o]));
+      const fallbackOrder = orders[0];
       return {
         status: 200,
         body: {
-          data: shifts.map((s) => ({
-            id: s.id,
-            stationId: 'STN-PACK-01',
-            staffId: s.staffId,
-            staffName: s.staff?.fullName,
-            warehouseName: s.warehouse?.name,
-            status: s.status === 'OPEN' ? 'ACTIVE' : 'COMPLETED',
-            startedAt: iso(s.shiftStart),
-            totalPacked: logs.length,
-            totalMatched: scans.filter((x) => x.result === 'MATCHED').length,
-            totalMismatched: scans.filter((x) => x.result === 'MISMATCHED').length,
-            totalCorrected: scans.filter((x) => x.result === 'MISMATCHED').length,
-            elapsedSeconds: 420,
-            scanLogs: scans.slice(0, 10).map((x) => ({ ...x, createdAt: iso(x.createdAt) })),
-          })),
+          data: shifts.map((s) => {
+            const sessionScans = scans.slice(0, 10).map((x) => {
+              const parsed = parseScanBarcode(x.barcode);
+              const matchedOrd = parsed.packCode ? orderByCode.get(parsed.packCode) : fallbackOrder;
+              return formatScanLogEntry(x, matchedOrd);
+            });
+            return {
+              id: s.id,
+              sessionCode: `CA-LB-${s.id.slice(-4).toUpperCase()}`,
+              stationId: 'STN-PACK-01',
+              staffId: s.staffId,
+              staffName: s.staff?.fullName,
+              warehouseName: s.warehouse?.name,
+              status: s.status === 'OPEN' ? 'ACTIVE' : 'CLOSED',
+              startedAt: iso(s.shiftStart),
+              closedAt: iso(s.shiftEnd),
+              totalPacked: logs.length,
+              totalMatched: scans.filter((x) => x.result === 'MATCHED').length,
+              totalMismatched: scans.filter((x) => x.result === 'MISMATCHED').length,
+              totalCorrected: scans.filter((x) => x.result === 'OVERRIDDEN').length,
+              elapsedSeconds: 420,
+              scanLogs: sessionScans,
+            };
+          }),
         },
       };
     }
     if (method === 'GET' && path === '/wms/packing-sessions/active') {
-      const [shift, logs, scans] = await withTenant(tid, async (tx) =>
+      const [shift, logs, scans, orders] = await withTenant(tid, async (tx) =>
         Promise.all([
           tx.staffShift.findFirst({ where: { status: 'OPEN' }, include: { staff: true }, orderBy: { shiftStart: 'desc' } }),
           tx.packStationLog.count(),
           tx.scanLog.findMany({ orderBy: { createdAt: 'desc' }, take: 20 }),
+          tx.order.findMany({ where: { deletedAt: null }, include: { items: { include: { product: true } } }, take: 10 }),
         ]),
       );
       if (!shift) return { status: 200, body: null };
+      const orderByCode = new Map(orders.map((o) => [o.trackingCode, o]));
+      const fallbackOrder = orders[0];
       return {
         status: 200,
         body: {
           id: shift.id,
-          sessionCode: `CA-LB-${shift.id.slice(0, 6).toUpperCase()}`,
+          sessionCode: `CA-LB-${shift.id.slice(-4).toUpperCase()}`,
           stationId: 'STN-PACK-01',
           staffId: shift.staffId,
           staffName: shift.staff?.fullName,
@@ -1180,17 +1372,35 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
           totalPacked: logs,
           totalMatched: scans.filter((x) => x.result === 'MATCHED').length,
           totalMismatched: scans.filter((x) => x.result === 'MISMATCHED').length,
-          totalCorrected: scans.filter((x) => x.result === 'MISMATCHED').length,
+          totalCorrected: scans.filter((x) => x.result === 'OVERRIDDEN').length,
           elapsedSeconds: 420,
           startedAt: iso(shift.shiftStart),
           closedAt: null,
-          scanLogs: scans,
+          scanLogs: scans.map((x) => {
+            const parsed = parseScanBarcode(x.barcode);
+            return formatScanLogEntry(x, (parsed.packCode ? orderByCode.get(parsed.packCode) : null) || fallbackOrder);
+          }),
         },
       };
     }
     if (method === 'GET' && path === '/wms/packing-sessions/scans') {
-      const scans = await withTenant(tid, async (tx) => tx.scanLog.findMany({ orderBy: { createdAt: 'desc' }, take: 50 }));
-      return { status: 200, body: { data: scans.map((s) => ({ ...s, createdAt: iso(s.createdAt) })) } };
+      const [scans, orders] = await withTenant(tid, async (tx) =>
+        Promise.all([
+          tx.scanLog.findMany({ orderBy: { createdAt: 'desc' }, take: 50 }),
+          tx.order.findMany({ where: { deletedAt: null }, include: { items: { include: { product: true } } }, take: 20 }),
+        ]),
+      );
+      const orderByCode = new Map(orders.map((o) => [o.trackingCode, o]));
+      const fallbackOrder = orders[0];
+      return {
+        status: 200,
+        body: {
+          data: scans.map((s) => {
+            const parsed = parseScanBarcode(s.barcode);
+            return formatScanLogEntry(s, (parsed.packCode ? orderByCode.get(parsed.packCode) : null) || fallbackOrder);
+          }),
+        },
+      };
     }
     if (method === 'POST' && path === '/wms/packing-sessions') {
       const writeErr = assertWriteAllowed(ctx);
@@ -1205,7 +1415,7 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
         status: 201,
         body: {
           id: created.id,
-          sessionCode: `CA-LB-${created.id.slice(0, 6).toUpperCase()}`,
+          sessionCode: `CA-LB-${created.id.slice(-4).toUpperCase()}`,
           stationId: 'STN-PACK-01',
           staffId: created.staffId,
           status: 'ACTIVE',
@@ -1224,10 +1434,25 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
       const writeErr = assertWriteAllowed(ctx);
       if (writeErr) return writeErr;
       const id = path.split('/')[3];
-      const updated = await withTenant(tid, async (tx) =>
-        tx.staffShift.update({ where: { id }, data: { status: 'CLOSED', shiftEnd: new Date() } }),
-      );
-      return { status: 200, body: { ...updated, status: 'CLOSED' } };
+      const closedAt = new Date();
+      const updated = await withTenant(tid, async (tx) => {
+        const existing = await tx.staffShift.findFirst({ where: { id } });
+        if (!existing) return null;
+        return tx.staffShift.update({ where: { id: existing.id }, data: { status: 'CLOSED', shiftEnd: closedAt } });
+      });
+      if (!updated) {
+        return { status: 404, body: { message: 'Không tìm thấy phiên đóng gói để chốt ca.' } };
+      }
+      return {
+        status: 200,
+        body: {
+          ...updated,
+          sessionCode: `CA-LB-${updated.id.slice(-4).toUpperCase()}`,
+          status: 'CLOSED',
+          startedAt: iso(updated.shiftStart),
+          closedAt: iso(updated.shiftEnd),
+        },
+      };
     }
     if (method === 'GET' && path === '/wms/packing-sessions/dashboard') {
       return { status: 200, body: { activeStations: 1, packedToday: 14, avgSeconds: 38 } };

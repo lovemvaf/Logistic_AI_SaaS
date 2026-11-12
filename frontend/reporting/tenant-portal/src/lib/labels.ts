@@ -457,7 +457,8 @@ export const returnStatusTone = (status: ReturnRequest['status']): Tone =>
 export const codStatusLabel = (status: CodRemittance['status']) => COD_LABELS[status] ?? status;
 export const codStatusTone = (status: CodRemittance['status']): Tone => COD_TONES[status] ?? 'neutral';
 export const movementTypeLabel = (type: MovementType) => MOVEMENT_LABELS[type] ?? type;
-export const roleLabel = (role: string) => ROLE_LABELS[role] ?? role.replace(/_/g, ' ').toLowerCase();
+export const roleLabel = (role?: string | null) =>
+  !role ? 'Theo vai trò' : (ROLE_LABELS[role] ?? String(role).replace(/_/g, ' ').toLowerCase());
 export const customerStatusLabel = (status: Customer['status']) => CUSTOMER_STATUS_LABELS[status] ?? status;
 export const customerStatusTone = (status: Customer['status']): Tone => CUSTOMER_STATUS_TONES[status] ?? 'neutral';
 export const clientStatusLabel = (status: Client['status']) => CLIENT_STATUS_LABELS[status] ?? status;

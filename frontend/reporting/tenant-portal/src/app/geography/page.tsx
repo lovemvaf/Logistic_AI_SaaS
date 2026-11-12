@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import dynamic from 'next/dynamic';
 import api from '@/lib/api';
 import { isMockDataSource } from '@/lib/data';
 import {
@@ -12,6 +13,18 @@ import {
   type StatusTone,
 } from 'ui-kit';
 import { Button, Input } from 'ui-components';
+
+const DongNaiRouteMap = dynamic(
+  () => import('map-components').then((m) => m.DongNaiRouteMap),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-[340px] items-center justify-center rounded-lg border border-line bg-surface-alt text-[12px] text-ink-faint">
+        Đang tải bản đồ hành lang TP Đồng Nai...
+      </div>
+    ),
+  },
+);
 
 const unwrapList = <T,>(res: any): T[] => {
   const payload = res?.data ?? res;
@@ -210,6 +223,49 @@ export default function GeographyPage() {
           },
         ]}
       />
+
+      <EditorialSection
+        eyebrow="Bản đồ Mạng lưới Hạ tầng"
+        title="Hành lang vận tải container & Điểm nút Đồng Nai 2026"
+        action={
+          <span className="text-[11px] text-ink-faint">
+            Nhấn vào điểm KCN / ICD / Cảng để chọn nhanh cho biểu mẫu quan trắc
+          </span>
+        }
+      >
+        <DongNaiRouteMap
+          title="Mạng lưới KCN · ICD · Cảng cửa ngõ TP Đồng Nai 2026"
+          subtitle="Hiển thị trực quan các tuyến QL1A, QL51, Cao tốc LT-DG và 3 hành lang Bắc - Trung tâm - Nam"
+          showAllHubs
+          showCorridors
+          isSimulatedRoute={false}
+          height={340}
+          selectedId={obsFacilityId || null}
+          onSelectStop={(id) => {
+            if (facilities.some((f) => f.id === id)) {
+              setObsFacilityId(id);
+            }
+          }}
+          stops={facilities
+            .filter((f) => Number.isFinite(Number(f.lat)) && Number.isFinite(Number(f.lng)))
+            .map((f) => {
+              const latestObs = f.queueObservations?.[0];
+              const waitMin = latestObs ? Number(latestObs.waitMinutes) : null;
+              return {
+                id: f.id,
+                name: f.name,
+                locality: f.localityName || f.administrativeUnit?.canonicalName || f.corridor,
+                lat: Number(f.lat),
+                lng: Number(f.lng),
+                outsideCity: Boolean(f.outsideCity),
+                facilityType: f.facilityType,
+                corridor: f.corridor,
+                waitMinutes: waitMin,
+                status: waitMin && waitMin >= 45 ? 'DELAYED' : f.outsideCity ? 'PENDING' : 'CURRENT',
+              };
+            })}
+        />
+      </EditorialSection>
 
       <EditorialSection
         eyebrow="Tra cứu & Chuẩn hóa"

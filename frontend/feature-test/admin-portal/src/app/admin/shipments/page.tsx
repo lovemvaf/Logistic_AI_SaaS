@@ -97,22 +97,30 @@ export default function ShipmentsPage() {
                 emptyTitle="No shipments found"
                 emptyDescription="Shipments synced from the backend will appear here."
               >
-                {shipments.map((shipment) => (
+                {shipments.map((shipment) => {
+                  const statusKey = shipment.status || 'IN_TRANSIT';
+                  const etaDate = shipment.eta ? new Date(shipment.eta) : null;
+                  const etaLabel =
+                    etaDate && !Number.isNaN(etaDate.getTime())
+                      ? etaDate.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' })
+                      : '—';
+                  return (
                   <tr key={shipment.id} className="h-[42px] border-b border-line/80 transition-colors hover:bg-surface-alt/60">
-                    <td className="pr-3 text-[12px] font-medium text-ink">{shipment.trackingNumber}</td>
-                    <td className="px-3 text-[12px] text-ink">{shipment.driver}</td>
-                    <td className="px-3 text-[12px] text-ink-soft">{shipment.vehicle}</td>
-                    <td className="px-3 text-[12px] text-ink-soft">{shipment.origin} → {shipment.destination}</td>
+                    <td className="pr-3 text-[12px] font-medium text-ink">{shipment.trackingNumber || shipment.id}</td>
+                    <td className="px-3 text-[12px] text-ink">{shipment.driver || '—'}</td>
+                    <td className="px-3 text-[12px] text-ink-soft">{shipment.vehicle || '—'}</td>
+                    <td className="px-3 text-[12px] text-ink-soft">{shipment.origin || '—'} → {shipment.destination || '—'}</td>
                     <td className="px-3 text-[12px]">
-                      <StatusLabel tone={STATUS_TONE[shipment.status] || 'neutral'}>
-                        {shipment.status.replace(/_/g, ' ')} · {shipment.progress}%
+                      <StatusLabel tone={STATUS_TONE[statusKey] || 'neutral'}>
+                        {statusKey.replace(/_/g, ' ')} · {Number.isFinite(Number(shipment.progress)) ? shipment.progress : 0}%
                       </StatusLabel>
                     </td>
                     <td className="pl-3 text-right text-[12px] tabular-nums text-ink-soft">
-                      {new Date(shipment.eta).toLocaleDateString('en-GB', { month: 'short', day: 'numeric' })}
+                      {etaLabel}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </TableState>
             </tbody>
           </table>

@@ -22,7 +22,7 @@ import { formatCurrency, formatDateTimeVN, orderStatusLabel, orderStatusTone, se
  */
 
 export default function ClientOrdersPage() {
-  const [orders, setOrders] = useState([]);
+  const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -133,7 +133,7 @@ export default function ClientOrdersPage() {
         actions={
           <Link
             href="/client/orders/upload"
-            className="mr-2 h-9 rounded-md border border-line px-3 text-[12px] font-medium text-ink-soft transition-colors hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30"
+            className="mr-2 inline-flex h-9 items-center rounded-md border border-line px-3 text-[12px] font-medium text-ink-soft transition-colors hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30"
           >
             Nhập CSV
           </Link>
@@ -176,16 +176,8 @@ export default function ClientOrdersPage() {
       </EditorialSection>
 
       <EditorialSection eyebrow="Bảng" title="Danh sách">
-        <TableState
-          loading={loading}
-          empty={!orders.length && !error}
-          error={error || undefined}
-          colSpan={6}
-          emptyTitle="Chưa có đơn hàng"
-          emptyDescription="Dữ liệu sẽ hiển thị sau khi tải."
-          onRetry={fetchOrders}
-        >
-          <table className="w-full border-collapse text-left">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[680px] border-collapse text-left">
             <thead>
               <tr className="border-b border-line">
                 <th className="h-9 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
@@ -209,44 +201,56 @@ export default function ClientOrdersPage() {
               </tr>
             </thead>
             <tbody>
-              {orders.map((row) => (
-                <tr key={row.id} className="h-[42px] border-b border-line/80 hover:bg-surface-alt/60">
-                  <td className="pr-3 font-mono text-[12px] font-medium text-ink">
-                    <Link href={`/track/${row.trackingCode}`}>{row.trackingCode}</Link>
-                  </td>
-                  <td className="px-3 text-[12px] text-ink-soft">{formatDateTimeVN(row.createdAt)}</td>
-                  <td className="px-3 text-[12px] text-ink-soft">{row.recipientName}</td>
-                  <td className="px-3 text-[12px] text-ink-soft">{serviceLabel(row.service)}</td>
-                  <td className="px-3">
-                    <StatusLabel tone={orderStatusTone(row.status)}>
-                      {orderStatusLabel(row.status)}
-                    </StatusLabel>
-                  </td>
-                  <td className="pl-3">
-                    <div className="flex items-center gap-2">
-                      {(row.status === 'NEW' || row.status === 'UNASSIGNED') ? (
+              <TableState
+                loading={loading}
+                empty={!orders.length && !error}
+                error={error || undefined}
+                colSpan={6}
+                emptyTitle="Chưa có đơn hàng"
+                emptyDescription="Dữ liệu sẽ hiển thị sau khi tải."
+                onRetry={fetchOrders}
+              >
+                {orders.map((row) => (
+                  <tr key={row.id} className="h-[42px] border-b border-line/80 hover:bg-surface-alt/60">
+                    <td className="pr-3 font-mono text-[12px] font-medium text-ink">
+                      <Link href={`/track/${row.trackingCode}`} className="text-accent hover:underline">
+                        {row.trackingCode}
+                      </Link>
+                    </td>
+                    <td className="px-3 text-[12px] text-ink-soft">{formatDateTimeVN(row.createdAt)}</td>
+                    <td className="px-3 text-[12px] text-ink-soft">{row.recipientName}</td>
+                    <td className="px-3 text-[12px] text-ink-soft">{serviceLabel(row.service)}</td>
+                    <td className="px-3">
+                      <StatusLabel tone={orderStatusTone(row.status)}>
+                        {orderStatusLabel(row.status)}
+                      </StatusLabel>
+                    </td>
+                    <td className="pl-3">
+                      <div className="flex items-center gap-2">
+                        {(row.status === 'NEW' || row.status === 'UNASSIGNED') ? (
+                          <button
+                            type="button"
+                            onClick={() => handleCancelOrder(row.id)}
+                            className="text-[12px] font-medium text-ink-soft underline decoration-ink-faint underline-offset-4 transition-colors hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30"
+                          >
+                            Huỷ
+                          </button>
+                        ) : null}
                         <button
                           type="button"
-                          onClick={() => handleCancelOrder(row.id)}
-                          className="text-[12px] font-medium text-ink-soft underline decoration-ink-faint underline-offset-4 transition-colors hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30"
+                          onClick={() => handleSuggestion(row.id)}
+                          className="text-[12px] font-medium text-accent hover:underline"
                         >
-                          Huỷ
+                          {expandedId === row.id ? 'Ẩn gợi ý' : 'Gợi ý'}
                         </button>
-                      ) : null}
-                      <button
-                        type="button"
-                        onClick={() => handleSuggestion(row.id)}
-                        className="text-[12px] font-medium text-accent hover:underline"
-                      >
-                        {expandedId === row.id ? 'Ẩn gợi ý' : 'Gợi ý'}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </TableState>
             </tbody>
           </table>
-        </TableState>
+        </div>
       </EditorialSection>
 
       {expandedId ? (

@@ -1,7 +1,7 @@
 'use client';
 
 import { Suspense, useEffect, useRef, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 
@@ -10,31 +10,53 @@ const inflightExchanges = new Map<string, Promise<{ ok: boolean; status: number;
 async function exchangeTokenOnce(token: string) {
   let promise = inflightExchanges.get(token);
   if (!promise) {
-    promise = fetch('/api/v1/demo/handoff/exchange', {
-      method: 'POST',
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-smartlogi-portal': 'customer',
-      },
-      body: JSON.stringify({ token, portal: 'customer' }),
-    }).then(async (res) => ({
-      ok: res.ok,
-      status: res.status,
-      data: await res.json().catch(() => ({})),
-    }));
+    promise = (async () => {
+      const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      const timer = controller ? setTimeout(() => controller.abort(), 12000) : null;
+      try {
+        const res = await fetch('/api/v1/demo/handoff/exchange', {
+          method: 'POST',
+          credentials: 'include',
+          signal: controller?.signal,
+          headers: {
+            'Content-Type': 'application/json',
+            'x-smartlogi-portal': 'customer',
+          },
+          body: JSON.stringify({ token, portal: 'customer' }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          inflightExchanges.delete(token);
+        }
+        return { ok: res.ok, status: res.status, data };
+      } catch (err: any) {
+        inflightExchanges.delete(token);
+        return {
+          ok: false,
+          status: 0,
+          data: {
+            message:
+              err?.name === 'AbortError'
+                ? 'Hết thời gian đồng bộ phiên chuyển cổng (12s). Vui lòng thử lại.'
+                : err?.message || 'Lỗi mạng khi xác thực token chuyển cổng.',
+          },
+        };
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    })();
     inflightExchanges.set(token, promise);
   }
   return promise;
 }
 
 function HandoffInner() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const { login } = useAuth();
   const loginRef = useRef(login);
   loginRef.current = login;
   const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   const token = searchParams.get('token')?.trim() || '';
   const nextPath = searchParams.get('next')?.trim() || '/client/dashboard';
@@ -48,26 +70,33 @@ function HandoffInner() {
 
     setError(null);
     let cancelled = false;
-    void exchangeTokenOnce(token).then(({ ok, data }) => {
-      if (cancelled) return;
-      if (!ok || !data?.token) {
-        setError(data?.message || 'Liên kết chuyển cổng không hợp lệ hoặc đã hết hạn.');
-        return;
-      }
-      if (typeof window !== 'undefined') {
-        if (data.sandboxKey) window.localStorage.setItem('smartlogi_sandbox_key', data.sandboxKey);
-        if (data.user?.tenantSlug && data.user.tenantSlug !== 'platform') {
-          window.localStorage.setItem('smartlogi_tenant_slug', data.user.tenantSlug);
+    void exchangeTokenOnce(token)
+      .then(({ ok, data }) => {
+        if (cancelled) return;
+        if (!ok || !data?.token) {
+          setError(data?.message || 'Liên kết chuyển cổng không hợp lệ hoặc đã hết hạn.');
+          return;
         }
-      }
-      loginRef.current(data.token, data.user);
-      router.replace(safeNext);
-    });
+        if (typeof window !== 'undefined') {
+          if (data.sandboxKey) window.localStorage.setItem('smartlogi_sandbox_key', data.sandboxKey);
+          if (data.user?.tenantSlug && data.user.tenantSlug !== 'platform') {
+            window.localStorage.setItem('smartlogi_tenant_slug', data.user.tenantSlug);
+          }
+        }
+        loginRef.current(data.token, data.user);
+        if (typeof window !== 'undefined') {
+          window.location.replace(safeNext);
+        }
+      })
+      .catch((err: any) => {
+        if (cancelled) return;
+        setError(err?.message || 'Không thể đồng bộ phiên chuyển cổng.');
+      });
 
     return () => {
       cancelled = true;
     };
-  }, [token, safeNext, router]);
+  }, [token, safeNext, attempt]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-canvas p-6">
@@ -78,12 +107,26 @@ function HandoffInner() {
         {error ? (
           <div className="mt-3 space-y-3">
             <p className="text-sm font-medium text-danger">{error}</p>
-            <Link
-              href="/client/login"
-              className="inline-block rounded-md bg-accent px-4 py-2 text-xs font-semibold text-white"
-            >
-              Về trang đăng nhập Khách hàng B2B
-            </Link>
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              {token ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    inflightExchanges.delete(token);
+                    setAttempt((n) => n + 1);
+                  }}
+                  className="inline-block rounded-md border border-line px-4 py-2 text-xs font-semibold text-ink hover:border-accent"
+                >
+                  Thử lại
+                </button>
+              ) : null}
+              <Link
+                href="/client/login"
+                className="inline-block rounded-md bg-accent px-4 py-2 text-xs font-semibold text-white"
+              >
+                Về trang đăng nhập Khách hàng B2B
+              </Link>
+            </div>
           </div>
         ) : (
           <p className="mt-3 text-sm text-ink-soft">

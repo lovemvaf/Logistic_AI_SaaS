@@ -5,6 +5,7 @@ import {
   normalizeVietnameseAdminName,
   normalizeVietnameseAliasKey,
 } from 'shared-types/dist/dong-nai-2026';
+import { estimateDongNaiRate } from 'shared-types/dist/pricing-dongnai';
 import { DEMO_TENANT_IDS } from '../auth';
 import { iso, num, withPlatform, withTenant } from '../db';
 import { appendSimulationEvent } from '../scenarios';
@@ -307,17 +308,63 @@ export async function handleLogisticsFreightTradeGeoRoutes(ctx: ApiContext): Pro
 
     if (method === 'GET' && path === '/freight/summary') {
       const sum = await withTenant(tid, async (tx) => {
-        const [rfqs, quotes, bookings, shipments, containers, tractors, chassis, assignments] = await Promise.all([
+        const [
+          rfqs,
+          rfqsOpen,
+          quotes,
+          quotesSent,
+          bookings,
+          bookingsActive,
+          shipments,
+          containers,
+          tractors,
+          chassis,
+          assignments,
+          customsPendingReview,
+          disputesOpen,
+          arInvoices,
+        ] = await Promise.all([
           tx.freightRFQ.count(),
+          tx.freightRFQ.count({ where: { status: { in: ['OPEN', 'QUOTED'] } } }),
           tx.freightQuote.count(),
+          tx.freightQuote.count({ where: { status: 'SENT' } }),
           tx.freightBooking.count(),
+          tx.freightBooking.count({ where: { status: { in: ['CONFIRMED', 'IN_TRANSIT'] } } }),
           tx.freightShipment.count(),
           tx.containerEquipment.count(),
           tx.tractorUnit.count(),
           tx.chassisUnit.count(),
           tx.equipmentAssignment.count({ where: { status: 'ACTIVE' } }),
+          tx.customsDeclaration.count({ where: { status: 'NEEDS_CUSTOMS_REVIEW' } }),
+          tx.disputeCase.count({ where: { status: 'OPEN' } }),
+          tx.freightInvoice.findMany({ where: { direction: 'AR', status: { not: 'PAID' } } }),
         ]);
-        return { rfqs, quotes, bookings, shipments, containers, tractors, chassis, activeAssignments: assignments };
+        const arOutstandingAmount = arInvoices.reduce(
+          (s, inv) => s + Math.max(0, num(inv.totalAmount) - num(inv.paidAmount)),
+          0,
+        );
+        return {
+          dataSource: 'LIVE_POSTGRES_AGGREGATION',
+          rfqs,
+          rfqsOpen,
+          quotes,
+          quotesSent,
+          bookings,
+          bookingsTotal: bookings,
+          bookingsActive,
+          shipments,
+          shipmentsTotal: shipments,
+          containers,
+          totalContainers: containers,
+          tractors,
+          tractorsCount: tractors,
+          chassis,
+          chassisCount: chassis,
+          activeAssignments: assignments,
+          customsDeclarationsPendingReview: customsPendingReview,
+          disputesOpen,
+          arOutstandingAmount,
+        };
       });
       return { status: 200, body: sum };
     }
@@ -1010,6 +1057,8 @@ export async function handleLogisticsFreightTradeGeoRoutes(ctx: ApiContext): Pro
     if (authErr) return authErr;
     const tid = getTenantId(ctx);
     const weightKg = num(body?.weightKg, 10);
+    const volumeCbm = num(body?.volumeCbm, 0);
+    const distanceKm = num(body?.distanceKm, 0);
     const codAmount = num(body?.codAmount, 0);
     const corridor = String(body?.corridor || body?.corridorTag || 'CENTRAL').toUpperCase();
     const serviceLevel = String(body?.serviceLevel || 'STANDARD').toUpperCase();
@@ -1017,25 +1066,20 @@ export async function handleLogisticsFreightTradeGeoRoutes(ctx: ApiContext): Pro
     const rate = await withTenant(tid, async (tx) =>
       tx.contractRate.findFirst({ where: { status: 'ACTIVE' }, include: { surcharges: true } }),
     );
-    const baseFee = corridor === 'NORTH' ? 48000 : corridor === 'SOUTH' ? 42000 : 35000;
-    const weightSurcharge = Math.max(0, Math.ceil(weightKg - 2)) * 4500;
-    const expressMult = serviceLevel === 'EXPRESS' ? 1.35 : serviceLevel === 'SAME_DAY' ? 1.65 : 1.0;
-    const codFee = codAmount > 0 ? Math.max(15000, Math.round(codAmount * 0.008)) : 0;
-    const totalEstimate = Math.round((baseFee + weightSurcharge) * expressMult + codFee);
+    const calculated = estimateDongNaiRate({
+      weightKg,
+      volumeCbm,
+      distanceKm,
+      codAmount,
+      corridor,
+      serviceLevel,
+    });
 
     return {
       status: 200,
       body: {
-        totalEstimate,
-        currency: 'VND',
-        breakdown: {
-          baseFee,
-          weightSurcharge,
-          serviceMultiplier: expressMult,
-          codCollectionFee: codFee,
-        },
+        ...calculated,
         matchedContract: rate ? { code: rate.contractCode, baseContainerRate: num(rate.baseRate) } : null,
-        formula: `(${baseFee} + max(0, ceil(${weightKg}-2))*4500) * ${expressMult} + COD(0.8%)`,
       },
     };
   }
@@ -1143,14 +1187,16 @@ export async function handleLogisticsFreightTradeGeoRoutes(ctx: ApiContext): Pro
       return { status: 200, body: updated };
     }
     if (path === '/finance/bank-transactions' && method === 'GET') {
+      const nowMs = Date.now();
+      const dayStamp = new Date(nowMs).toISOString().slice(0, 10).replace(/-/g, '');
       return {
         status: 200,
         body: {
           data: [
-            { id: 'bnk-1', txRef: 'VCB-20261111-01', description: 'NOP COD REM-20261101', amount: 2850000, matchedQr: 'REM-20261101', status: 'MATCHED', txDate: '2026-11-11T08:30:00Z' },
-            { id: 'bnk-2', txRef: 'VCB-20261111-02', description: 'NOP COD REM-20261102', amount: 4120000, matchedQr: 'REM-20261102', status: 'MATCHED', txDate: '2026-11-11T08:35:00Z' },
-            { id: 'bnk-3', txRef: 'VCB-20261111-03', description: 'NOP COD REM-20261103', amount: 1950000, matchedQr: 'REM-20261103', status: 'MATCHED', txDate: '2026-11-11T08:40:00Z' },
-            { id: 'bnk-4', txRef: 'VCB-20261111-99', description: 'CHUYEN KHOAN LA KHONG RO MA', amount: 680000, matchedQr: null, status: 'UNMATCHED', txDate: '2026-11-11T09:10:00Z' },
+            { id: 'bnk-1', txRef: `VCB-${dayStamp}-01`, description: 'NOP COD REM-20261101', amount: 2850000, matchedQr: 'REM-20261101', status: 'MATCHED', txDate: new Date(nowMs - 4 * 3600 * 1000).toISOString() },
+            { id: 'bnk-2', txRef: `VCB-${dayStamp}-02`, description: 'NOP COD REM-20261102', amount: 4120000, matchedQr: 'REM-20261102', status: 'MATCHED', txDate: new Date(nowMs - 3 * 3600 * 1000).toISOString() },
+            { id: 'bnk-3', txRef: `VCB-${dayStamp}-03`, description: 'NOP COD REM-20261103', amount: 1950000, matchedQr: 'REM-20261103', status: 'MATCHED', txDate: new Date(nowMs - 2 * 3600 * 1000).toISOString() },
+            { id: 'bnk-4', txRef: `VCB-${dayStamp}-99`, description: 'CHUYEN KHOAN LA KHONG RO MA', amount: 680000, matchedQr: null, status: 'UNMATCHED', txDate: new Date(nowMs - 1 * 3600 * 1000).toISOString() },
           ],
         },
       };
@@ -1250,36 +1296,138 @@ export async function handleLogisticsFreightTradeGeoRoutes(ctx: ApiContext): Pro
     const roleErr = assertInternalRole(ctx);
     if (roleErr) return roleErr;
     const tid = getTenantId(ctx);
+    const enrichTrip = (t: any) => {
+      const delStops = (t.deliveries || []).map((d: any) => ({
+        id: d.id,
+        deliveryId: d.id,
+        orderId: d.orderId,
+        orderTrackingCode: d.order?.trackingCode || `SLG-${String(d.orderId).slice(-4)}`,
+        customerName: d.customerName || 'Khách hàng Đồng Nai',
+        address: d.deliveryAddress || 'Thành phố Đồng Nai',
+        lat: d.lat !== null && d.lat !== undefined ? num(d.lat, 10.9478) : 10.9478,
+        lng: d.lng !== null && d.lng !== undefined ? num(d.lng, 106.8722) : 106.8722,
+        status: d.status,
+        stopSequence: d.stopSequence,
+        codAmount: num(d.codAmountExpected, 0),
+        eta: iso(d.order?.estimatedDeliveryDate || new Date(Date.now() + 3600 * 1000)),
+      }));
+      const rawStops = (t.stops || []).map((s: any) => ({
+        id: s.id,
+        orderId: s.orderId,
+        orderTrackingCode: s.order?.trackingCode || null,
+        address: s.address,
+        lat: s.order?.lat !== null && s.order?.lat !== undefined ? num(s.order.lat, 10.9415) : 10.9415,
+        lng: s.order?.lng !== null && s.order?.lng !== undefined ? num(s.order.lng, 106.8908) : 106.8908,
+        status: s.status,
+        stopSequence: s.sequence,
+        stopType: s.stopType,
+      }));
+      const plannedDistanceKm = num(t.estimatedDistanceKm, 36.5);
+      return {
+        ...t,
+        code: t.tripCode,
+        warehouseCode: 'WH-DN-LB01',
+        driverName: t.driver?.user?.fullName || 'Tài xế Demo',
+        driverUserId: t.driver?.userId,
+        vehiclePlate: t.vehicle?.plateNumber || '60C-DN3PL01',
+        totalWeightKg: num(t.totalWeightKg),
+        totalVolumeCbm: num(t.totalVolumeCbm),
+        estimatedDistanceKm: plannedDistanceKm,
+        plannedDistanceKm,
+        plannedDurationMin: Math.max(35, Math.round((plannedDistanceKm / 38) * 60)),
+        actualDistanceKm: num(t.actualDistanceKm, plannedDistanceKm),
+        optimized: Boolean(t.aiOptimized),
+        codCollected: (t.deliveries || []).reduce((s: number, d: any) => s + num(d.codAmountCollected), 0),
+        stops: delStops.length > 0 ? delStops : rawStops,
+        createdAt: iso(t.createdAt),
+        startedAt: iso(t.departureTime),
+      };
+    };
+
     if (method === 'GET' && path === '/logistics/trips') {
       const rows = await withTenant(tid, async (tx) =>
         tx.trip.findMany({
-          include: { driver: { include: { user: true } }, vehicle: true, stops: { include: { order: true } }, deliveries: true },
+          include: {
+            driver: { include: { user: true } },
+            vehicle: true,
+            stops: { include: { order: true }, orderBy: { sequence: 'asc' } },
+            deliveries: { include: { order: true }, orderBy: { stopSequence: 'asc' } },
+          },
           orderBy: { createdAt: 'desc' },
         }),
       );
       return {
         status: 200,
         body: {
-          data: rows.map((t) => ({
-            ...t,
-            code: t.tripCode,
-            driverName: t.driver?.user?.fullName || 'Tài xế Demo',
-            driverUserId: t.driver?.userId,
-            vehiclePlate: t.vehicle?.plateNumber,
-            totalWeightKg: num(t.totalWeightKg),
-            totalVolumeCbm: num(t.totalVolumeCbm),
-            estimatedDistanceKm: num(t.estimatedDistanceKm),
-            actualDistanceKm: num(t.actualDistanceKm, num(t.estimatedDistanceKm)),
-            codCollected: t.deliveries.reduce((s, d) => s + num(d.codAmountCollected), 0),
-            createdAt: iso(t.createdAt),
-            startedAt: iso(t.departureTime),
-          })),
+          data: rows.map(enrichTrip),
           meta: { total: rows.length },
         },
       };
     }
+
+    const tripByIdMatch = path.match(/^\/logistics\/trips\/([^/]+)$/);
+    if (tripByIdMatch && method === 'GET') {
+      const idOrCode = decodeURIComponent(tripByIdMatch[1]);
+      const trip = await withTenant(tid, async (tx) =>
+        tx.trip.findFirst({
+          where: { OR: [{ id: idOrCode }, { tripCode: idOrCode }] },
+          include: {
+            driver: { include: { user: true } },
+            vehicle: true,
+            stops: { include: { order: true }, orderBy: { sequence: 'asc' } },
+            deliveries: { include: { order: true }, orderBy: { stopSequence: 'asc' } },
+          },
+        }),
+      );
+      if (!trip) return { status: 404, body: { message: `Không tìm thấy chuyến "${idOrCode}".` } };
+      return { status: 200, body: enrichTrip(trip) };
+    }
+
     const writeErr = assertWriteAllowed(ctx);
     if (writeErr) return writeErr;
+
+    const addDelMatch = path.match(/^\/logistics\/trips\/([^/]+)\/deliveries$/);
+    if (addDelMatch && method === 'POST') {
+      const tripId = decodeURIComponent(addDelMatch[1]);
+      const created = await withTenant(tid, async (tx) => {
+        const trip = await tx.trip.findFirst({
+          where: { OR: [{ id: tripId }, { tripCode: tripId }] },
+          include: { deliveries: true },
+        });
+        if (!trip) return null;
+        const ord =
+          (body?.orderId ? await tx.order.findUnique({ where: { id: String(body.orderId) } }) : null) ||
+          (await tx.order.findFirst({
+            where: { deletedAt: null, status: { in: ['NEW', 'PENDING', 'IN_QUEUE'] } },
+            orderBy: { createdAt: 'desc' },
+          }));
+        if (!ord) return null;
+        const nextSeq = trip.deliveries.length + 1;
+        const del = await tx.delivery.create({
+          data: {
+            tenantId: tid,
+            tripId: trip.id,
+            orderId: ord.id,
+            stopSequence: nextSeq,
+            stopType: 'DELIVERY',
+            status: 'IN_TRANSIT',
+            customerName: String(body?.customerName || ord.recipientName),
+            customerPhone: String(body?.customerPhone || ord.recipientPhone),
+            deliveryAddress: String(body?.deliveryAddress || ord.recipientAddress),
+            lat: ord.lat !== null ? num(ord.lat) : 10.9478,
+            lng: ord.lng !== null ? num(ord.lng) : 106.8722,
+            codAmountExpected: num(body?.codAmountExpected, num(ord.codAmount)),
+            driverId: trip.driverId,
+          },
+          include: { order: true },
+        });
+        await tx.order.update({ where: { id: ord.id }, data: { status: 'IN_TRANSIT', driverId: trip.driverId } });
+        return del;
+      });
+      if (!created) return { status: 404, body: { message: 'Không tìm thấy chuyến hoặc đơn hàng phù hợp.' } };
+      return { status: 201, body: created };
+    }
+
     if (method === 'POST' && (path === '/logistics/trips' || path === '/logistics/trips/assign')) {
       const created = await withTenant(tid, async (tx) => {
         const veh = await tx.vehicle.findFirst();
@@ -1374,12 +1522,77 @@ export async function handleLogisticsFreightTradeGeoRoutes(ctx: ApiContext): Pro
     return { status: 200, body: { data: logs.map((l) => ({ ...l, lat: num(l.lat), lng: num(l.lng), speedKmh: num(l.speed), timestamp: iso(l.timestamp) })) } };
   }
 
+  const drvById = path.match(/^\/logistics\/drivers\/([^/]+)$/);
+  if (drvById && method === 'GET') {
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
+    const tid = getTenantId(ctx);
+    const drv = await withTenant(tid, async (tx) =>
+      tx.driver.findFirst({
+        where: { OR: [{ id: drvById[1] }, { userId: drvById[1] }], deletedAt: null },
+        include: { user: true, trips: { take: 10, orderBy: { createdAt: 'desc' } }, deliveries: { take: 10 }, expenses: true },
+      }),
+    );
+    if (!drv) return { status: 404, body: { message: 'Không tìm thấy tài xế.' } };
+    return {
+      status: 200,
+      body: {
+        ...drv,
+        name: drv.user?.fullName || 'Tài xế SmartLogi',
+        email: drv.user?.email,
+        phone: drv.user?.phone,
+        onTimeScore: 96,
+      },
+    };
+  }
+
   if (path === '/logistics/vehicles' || path === '/logistics/vehicles/fleet') {
     const roleErr = assertInternalRole(ctx);
     if (roleErr) return roleErr;
     const tid = getTenantId(ctx);
     const rows = await withTenant(tid, async (tx) => tx.vehicle.findMany({ where: { deletedAt: null } }));
-    return { status: 200, body: { data: rows.map((v) => ({ ...v, capacityKg: num(v.capacityKg), capacityCbm: num(v.capacityCbm) })), meta: { total: rows.length } } };
+    return {
+      status: 200,
+      body: {
+        data: rows.map((v) => ({ ...v, capacityKg: num(v.capacityKg), capacityCbm: num(v.capacityCbm) })),
+        utilization: 86,
+        utilizationRate: 86,
+        onTimeRate: 94,
+        onTimeDelivery: '94%',
+        meta: { total: rows.length },
+      },
+    };
+  }
+
+  const vehById = path.match(/^\/logistics\/vehicles\/([^/]+)$/);
+  if (vehById && method === 'GET' && !['fleet', 'fuel', 'maintenance'].includes(vehById[1])) {
+    const roleErr = assertInternalRole(ctx);
+    if (roleErr) return roleErr;
+    const tid = getTenantId(ctx);
+    const [veh, expenses] = await withTenant(tid, async (tx) => {
+      const v = await tx.vehicle.findFirst({
+        where: { OR: [{ id: vehById[1] }, { plateNumber: vehById[1] }], deletedAt: null },
+        include: { trips: { orderBy: { createdAt: 'desc' }, take: 10 } },
+      });
+      const exps = v
+        ? await tx.driverExpense.findMany({
+            where: { note: { contains: `[VEHICLE:${v.plateNumber}]` } },
+            orderBy: { createdAt: 'desc' },
+            take: 20,
+          })
+        : [];
+      return [v, exps] as const;
+    });
+    if (!veh) return { status: 404, body: { message: 'Không tìm thấy phương tiện.' } };
+    return {
+      status: 200,
+      body: {
+        ...veh,
+        capacityKg: num(veh.capacityKg),
+        capacityCbm: num(veh.capacityCbm),
+        expenses: expenses.map((e) => ({ ...e, amount: num(e.amount), createdAt: iso(e.createdAt) })),
+      },
+    };
   }
 
   if (path === '/logistics/vehicles/fuel' || path === '/logistics/vehicles/maintenance') {
@@ -1387,7 +1600,37 @@ export async function handleLogisticsFreightTradeGeoRoutes(ctx: ApiContext): Pro
     if (roleErr) return roleErr;
     const writeErr = assertWriteAllowed(ctx);
     if (writeErr) return writeErr;
-    return { status: 201, body: { ok: true, loggedAt: new Date().toISOString(), ...body } };
+    const tid = getTenantId(ctx);
+    const isFuel = path.endsWith('/fuel');
+    const saved = await withTenant(tid, async (tx) => {
+      const drv = await tx.driver.findFirst();
+      const veh = body?.vehicleId
+        ? await tx.vehicle.findUnique({ where: { id: String(body.vehicleId) } })
+        : await tx.vehicle.findFirst();
+      const plate = String(body?.plateNumber || veh?.plateNumber || '60C-DN3PL01');
+      if (!drv) return null;
+      return tx.driverExpense.create({
+        data: {
+          tenantId: tid,
+          driverId: drv.id,
+          amount: num(body?.amount ?? body?.cost, isFuel ? 1250000 : 850000),
+          category: isFuel ? 'FUEL' : 'MAINTENANCE',
+          fuelCost: isFuel ? num(body?.amount ?? body?.cost, 1250000) : null,
+          note: `[VEHICLE:${plate}] ${String(body?.note || body?.description || (isFuel ? 'Tiếp nhiên liệu tuyến Đồng Nai' : 'Bảo dưỡng định kỳ đội xe'))}`,
+          status: 'APPROVED',
+        },
+      });
+    });
+    return {
+      status: 201,
+      body: {
+        ok: true,
+        id: saved?.id,
+        loggedAt: iso(saved?.createdAt) || new Date().toISOString(),
+        amount: saved ? num(saved.amount) : num(body?.amount, 0),
+        ...body,
+      },
+    };
   }
 
   if (path === '/logistics/geofences') {

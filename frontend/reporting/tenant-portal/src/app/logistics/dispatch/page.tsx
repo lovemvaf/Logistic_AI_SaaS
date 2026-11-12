@@ -13,7 +13,6 @@ import {
 import type { EditorialMetric } from 'ui-kit';
 import {
   Button,
-  DataState,
   Input,
   Modal,
   Pagination,
@@ -53,7 +52,7 @@ const TRIP_LINE_TONE: Record<TripStatus, string> = {
   CANCELLED: '#62665c',
 };
 
-// Leaflet chỉ render phía client, không import module ở server.
+// Bản đồ chỉ render phía client, không import module ở server.
 const LeafletMap: any = dynamic(
   (() =>
     import('map-components').then((m) => m.LeafletMap).catch(() => () => <div className="h-full w-full bg-surface-alt" />)
@@ -62,7 +61,21 @@ const LeafletMap: any = dynamic(
     ssr: false,
     loading: () => (
       <div className="h-full w-full flex items-center justify-center bg-surface text-ink-faint text-[12px] font-medium">
-        Đang tải bản đồ
+        Đang tải bản đồ Leaflet
+      </div>
+    ),
+  },
+);
+
+const DongNaiRouteMap: any = dynamic(
+  (() =>
+    import('map-components').then((m) => m.DongNaiRouteMap)
+  ) as any,
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-[380px] w-full flex items-center justify-center rounded-lg border border-line bg-surface-alt text-ink-faint text-[12px] font-medium">
+        Đang tải bản đồ hành lang Đồng Nai...
       </div>
     ),
   },
@@ -91,6 +104,7 @@ export default function DispatchTowerPage() {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = useMemo(() => trips.find((t) => t.id === selectedId) ?? null, [trips, selectedId]);
+  const [mapView, setMapView] = useState<'corridor' | 'leaflet'>('corridor');
 
   // LONG actions
   const [mutating, setMutating] = useState<Record<string, boolean>>({});
@@ -307,64 +321,156 @@ export default function DispatchTowerPage() {
         </div>
       </EditorialSection>
 
-      <EditorialSection title="Bản đồ">
-        <div className="flex flex-col lg:flex-row gap-6 h-[560px]">
-          <div className="flex-1 h-[500px] rounded-lg border border-line overflow-hidden">
-            <LeafletMap
-              center={[10.7900, 106.6900]}
-              zoom={11}
-              markers={sortedTrips.flatMap((t) => t.stops.map((s) => ({ id: s.id, lat: s.lat, lng: s.lng, label: `${s.orderTrackingCode} · ${s.customerName}` })))}
-              polylines={sortedTrips.map((t) => ({
-                color: (TRIP_LINE_TONE as Record<TripStatus, string>)[t.status],
-                points: t.stops.map((s) => [s.lat, s.lng]),
-              }))}
-            />
+      <EditorialSection
+        title="Bản đồ"
+        action={
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setMapView('corridor')}
+              className={`rounded px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                mapView === 'corridor' ? 'bg-accent text-white' : 'border border-line text-ink-soft hover:text-ink'
+              }`}
+            >
+              Hành lang Đồng Nai
+            </button>
+            <button
+              type="button"
+              onClick={() => setMapView('leaflet')}
+              className={`rounded px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                mapView === 'leaflet' ? 'bg-accent text-white' : 'border border-line text-ink-soft hover:text-ink'
+              }`}
+            >
+              Bản đồ Leaflet
+            </button>
           </div>
-          <div className="w-full lg:w-[336px] shrink-0 overflow-auto">
-            <DataState loading={loading} empty={!loading && sortedTrips.length === 0}>
-              <table className="min-w-full divide-y divide-line">
-                <thead className="bg-surface-alt">
-                  <tr>
-                    <th className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Chuyến</th>
-                    <th className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Tài xế</th>
-                    <th className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Trạng thái</th>
-                    <th className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Kho</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-line text-[13px]">
-                  <TableState
-                    loading={loading}
-                    empty={!loading && sortedTrips.length === 0}
-                    onRetry={load}
-                    colSpan={4}
-                    error={error ? new Error(error) : undefined}
-                    emptyContent={<tr><td colSpan={4} className="px-3 py-6 text-center text-ink-faint">Chưa có chuyến nào khớp bộ lọc.</td></tr>}
-                  >
-                    {paged.map((t) => (
-                      <tr
-                        key={t.id}
-                        className={`${selectedId === t.id ? 'bg-accent-soft' : ''} transition-colors hover:bg-surface-alt cursor-pointer`}
-                        onClick={() => setSelectedId(t.id)}
-                      >
-                        <td className="px-3 py-2 font-medium text-ink">{t.code} <span className="font-mono text-[11px] text-ink-faint">{t.vehiclePlate}</span></td>
-                        <td className="px-3 py-2">{t.driverName}</td>
-                        <td className="px-3 py-2"><StatusLabel tone={tripStatusTone(t.status)}>{tripStatusLabel(t.status)}</StatusLabel></td>
-                        <td className="px-3 py-2">
-                          <StatusLabel tone={warehouseStatusTone(warehouses.find((w) => w.id === t.warehouseCode)?.status ?? 'ACTIVE')}>
-                            {t.warehouseCode}
-                          </StatusLabel>
-                        </td>
-                      </tr>
-                    ))}
-                  </TableState>
-                </tbody>
-              </table>
-            </DataState>
-            <div className="flex justify-center py-3">
-              <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />
+        }
+      >
+        {(() => {
+          const activeTripForMap = selected ?? sortedTrips[0] ?? null;
+          const mapStops = (activeTripForMap?.stops ?? []).filter(
+            (s) => Number.isFinite(Number(s.lat)) && Number.isFinite(Number(s.lng)),
+          );
+          const allStops = sortedTrips.flatMap((t) =>
+            t.stops.filter((s) => Number.isFinite(Number(s.lat)) && Number.isFinite(Number(s.lng))),
+          );
+          const centerLat = Number(mapStops[0]?.lat ?? allStops[0]?.lat ?? 10.875);
+          const centerLng = Number(mapStops[0]?.lng ?? allStops[0]?.lng ?? 106.905);
+
+          return (
+            <div className="flex flex-col lg:flex-row gap-6">
+              <div className="flex-1 min-w-0">
+                {mapView === 'corridor' ? (
+                  <DongNaiRouteMap
+                    title={
+                      activeTripForMap
+                        ? `Tuyến ${activeTripForMap.code} · ${activeTripForMap.vehiclePlate || 'Container / Tải'}`
+                        : 'Bản đồ Điều phối Hành lang Đồng Nai'
+                    }
+                    subtitle={
+                      activeTripForMap
+                        ? `${activeTripForMap.driverName || 'Chưa phân công'} · ${activeTripForMap.stops.length} điểm giao`
+                        : 'Chọn một chuyến trong bảng bên cạnh để mô phỏng và theo dõi tuyến đường'
+                    }
+                    stops={mapStops.map((s) => ({
+                      id: s.id,
+                      name: s.orderTrackingCode,
+                      locality: s.customerName,
+                      lat: Number(s.lat),
+                      lng: Number(s.lng),
+                      status: s.status === 'DELIVERED' ? 'COMPLETED' : s.status === 'FAILED' ? 'DELAYED' : 'CURRENT',
+                      eta: s.eta,
+                      sequence: s.sequence,
+                    }))}
+                    polylines={sortedTrips
+                      .filter((t) => t.stops.some((s) => Number.isFinite(Number(s.lat)) && Number.isFinite(Number(s.lng))))
+                      .slice(0, 6)
+                      .map((t) => ({
+                        id: t.id,
+                        label: t.code,
+                        active: activeTripForMap?.id === t.id,
+                        color: (TRIP_LINE_TONE as Record<TripStatus, string>)[t.status] || '#2f4a3c',
+                        points: t.stops
+                          .filter((s) => Number.isFinite(Number(s.lat)) && Number.isFinite(Number(s.lng)))
+                          .map((s) => ({ lat: Number(s.lat), lng: Number(s.lng), label: s.orderTrackingCode })),
+                      }))}
+                    interactivePlayback={mapStops.length >= 2}
+                    isSimulatedRoute
+                    showAllHubs
+                    showCorridors
+                    height={430}
+                  />
+                ) : (
+                  <div className="h-[480px] rounded-lg border border-line overflow-hidden">
+                    <LeafletMap
+                      center={[centerLat, centerLng]}
+                      zoom={11}
+                      markers={allStops.map((s) => ({
+                        id: s.id,
+                        lat: Number(s.lat),
+                        lng: Number(s.lng),
+                        label: `${s.orderTrackingCode} · ${s.customerName}`,
+                      }))}
+                      polylines={sortedTrips
+                        .map((t) => ({
+                          color: (TRIP_LINE_TONE as Record<TripStatus, string>)[t.status],
+                          points: t.stops
+                            .filter((s) => Number.isFinite(Number(s.lat)) && Number.isFinite(Number(s.lng)))
+                            .map((s) => [Number(s.lat), Number(s.lng)] as [number, number]),
+                        }))
+                        .filter((line) => line.points.length >= 2)}
+                    />
+                  </div>
+                )}
+              </div>
+              <div className="w-full lg:w-[348px] shrink-0 overflow-auto max-h-[540px]">
+                <table className="min-w-full divide-y divide-line">
+                  <thead className="bg-surface-alt">
+                    <tr>
+                      <th className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Chuyến</th>
+                      <th className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Tài xế</th>
+                      <th className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Trạng thái</th>
+                      <th className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Kho</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-line text-[13px]">
+                    <TableState
+                      loading={loading}
+                      empty={!loading && sortedTrips.length === 0}
+                      onRetry={load}
+                      colSpan={4}
+                      error={error ? new Error(error) : undefined}
+                      emptyContent={<tr><td colSpan={4} className="px-3 py-6 text-center text-ink-faint">Chưa có chuyến nào khớp bộ lọc.</td></tr>}
+                    >
+                      {paged.map((t) => (
+                        <tr
+                          key={t.id}
+                          className={`${(selectedId ?? activeTripForMap?.id) === t.id ? 'bg-accent-soft' : ''} transition-colors hover:bg-surface-alt cursor-pointer`}
+                          onClick={() => setSelectedId(t.id)}
+                        >
+                          <td className="px-3 py-2 font-medium text-ink">
+                            <div>{t.code}</div>
+                            <div className="font-mono text-[11px] text-ink-faint">{t.vehiclePlate}</div>
+                          </td>
+                          <td className="px-3 py-2">{t.driverName}</td>
+                          <td className="px-3 py-2"><StatusLabel tone={tripStatusTone(t.status)}>{tripStatusLabel(t.status)}</StatusLabel></td>
+                          <td className="px-3 py-2">
+                            <StatusLabel tone={warehouseStatusTone(warehouses.find((w) => w.code === t.warehouseCode || w.id === t.warehouseCode)?.status ?? 'ACTIVE')}>
+                              {t.warehouseCode || '—'}
+                            </StatusLabel>
+                          </td>
+                        </tr>
+                      ))}
+                    </TableState>
+                  </tbody>
+                </table>
+                <div className="flex justify-center py-3">
+                  <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
+          );
+        })()}
       </EditorialSection>
 
       <EditorialSection
@@ -421,7 +527,7 @@ export default function DispatchTowerPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-line text-[13px]">
-                    {selected.stops.sort((a, b) => a.sequence - b.sequence).map((s) => (
+                    {[...selected.stops].sort((a, b) => a.sequence - b.sequence).map((s) => (
                       <tr key={s.id} className="hover:bg-surface-alt">
                         <td className="px-3 py-2 font-medium text-ink">{s.sequence}</td>
                         <td className="px-3 py-2 font-mono text-[12px]">{s.orderTrackingCode}</td>

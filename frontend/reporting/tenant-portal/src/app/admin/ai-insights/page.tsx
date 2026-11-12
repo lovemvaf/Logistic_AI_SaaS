@@ -26,7 +26,8 @@ const MODEL_TONES: Record<AiInsight['model'], 'neutral' | 'success' | 'warning' 
 
 /** Entity reference dẫn về đúng phân hệ, ví dụ đơn hàng hoặc khách hàng. */
 function entityTarget(row: AiInsight): { href: string; label: string } | null {
-  const ref = row.entityRef;
+  const ref = row.entityRef || '';
+  if (!ref) return null;
   if (ref.startsWith('SLG-')) return { href: `/orders/${ref}`, label: `Đơn hàng ${ref}` };
   if (ref.startsWith('TRP-')) return { href: `/logistics/trips/${ref}`, label: `Chuyến ${ref}` };
   if (ref.startsWith('CLI-')) return { href: `/admin/clients/${ref}`, label: `Khách hàng ${ref}` };
@@ -66,13 +67,13 @@ export default function AiInsightsPage() {
     if (modelFilter && row.model !== modelFilter) return false;
     if (search) {
       const term = search.toLowerCase();
-      return row.title.toLowerCase().includes(term) || row.detail.toLowerCase().includes(term);
+      return (row.title || '').toLowerCase().includes(term) || (row.detail || '').toLowerCase().includes(term);
     }
     return true;
   });
 
   const newCount = insights.filter((row) => row.status === 'NEW').length;
-  const avgConfidence = insights.length === 0 ? 0 : insights.reduce((sum, row) => sum + row.confidence, 0) / insights.length;
+  const avgConfidence = insights.length === 0 ? 0 : insights.reduce((sum, row) => sum + (row.confidence ?? 0), 0) / insights.length;
   const accounts = insights.filter((row) => row.status === 'ACTIONED').length;
 
   const modelCount = (model: AiInsight['model']) => insights.filter((row) => row.model === model).length;

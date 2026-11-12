@@ -144,47 +144,47 @@ export default function ClientInventory() {
       </EditorialSection>
 
       <EditorialSection eyebrow="Kho hàng" title={listSummary(filtered.length, 'dòng tồn')}>
-        <TableState
-          loading={loading}
-          empty={!filtered.length}
-          error={error || undefined}
-          colSpan={8}
-          emptyTitle="Chưa có tồn kho"
-          emptyDescription="Dữ liệu tồn của công ty sẽ hiển thị ở đây."
-          onRetry={fetchStock}
-        >
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[880px] border-collapse text-left">
-              <caption className="sr-only">Bảng tồn kho theo SKU/kho của công</caption>
-              <thead>
-                <tr className="border-b border-line">
-                  <th scope="col" className="h-9 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-                    SKU
-                  </th>
-                  <th scope="col" className="h-9 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-                    Tên hàng
-                  </th>
-                  <th scope="col" className="h-9 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-                    Kho
-                  </th>
-                  <th scope="col" className="h-9 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-                    Số lượng
-                  </th>
-                  <th scope="col" className="h-9 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-                    Đã đặt trước
-                  </th>
-                  <th scope="col" className="h-9 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-                    Khả dụng
-                  </th>
-                  <th scope="col" className="h-9 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-                    Ngày hết hạn
-                  </th>
-                  <th scope="col" className="h-9 pl-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-                    Giá
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[880px] border-collapse text-left">
+            <caption className="sr-only">Bảng tồn kho theo SKU/kho của công</caption>
+            <thead>
+              <tr className="border-b border-line">
+                <th scope="col" className="h-9 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+                  SKU
+                </th>
+                <th scope="col" className="h-9 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+                  Tên hàng
+                </th>
+                <th scope="col" className="h-9 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+                  Kho
+                </th>
+                <th scope="col" className="h-9 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+                  Số lượng
+                </th>
+                <th scope="col" className="h-9 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+                  Đã đặt trước
+                </th>
+                <th scope="col" className="h-9 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+                  Khả dụng
+                </th>
+                <th scope="col" className="h-9 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+                  Ngày hết hạn
+                </th>
+                <th scope="col" className="h-9 pl-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+                  Giá
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <TableState
+                loading={loading}
+                empty={!filtered.length}
+                error={error || undefined}
+                colSpan={8}
+                emptyTitle="Chưa có tồn kho"
+                emptyDescription="Dữ liệu tồn của công ty sẽ hiển thị ở đây."
+                onRetry={fetchStock}
+              >
                 {filtered.map((row: any) => {
                   const status = stockStatus(row.available, row.reorderPoint, row.quantity);
                   return (
@@ -206,10 +206,10 @@ export default function ClientInventory() {
                     </tr>
                   );
                 })}
-              </tbody>
-            </table>
-          </div>
-        </TableState>
+              </TableState>
+            </tbody>
+          </table>
+        </div>
       </EditorialSection>
 
       {lowStock.length > 0 || outOfStock.length > 0 ? (

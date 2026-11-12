@@ -146,18 +146,20 @@ export default function PackLogsPage() {
       setStaffList(staffListData);
       setSummary(summaryData);
 
-      // Làm giàu hàng chờ bằng thông tin đơn.
+      // Làm giàu hàng chờ bằng thông tin đơn song song thay vì nối tuần tự.
       const packCodes = new Set<string>();
       for (const session of sessionList) {
         for (const log of session.scanLogs || []) packCodes.add(log.packCode);
       }
       const orderMapData: Record<string, PackOrder> = {};
-      for (const code of packCodes) {
-        try {
-          const order = await data.orders.byPackCode(code);
-          if (order) orderMapData[code] = order;
-        } catch {}
-      }
+      await Promise.all(
+        Array.from(packCodes).slice(0, 30).map(async (code) => {
+          try {
+            const order = await data.orders.byPackCode(code);
+            if (order) orderMapData[code] = order;
+          } catch {}
+        }),
+      );
       setOrderMap(orderMapData);
 
       setCorrections(await data.corrections.list());
@@ -312,52 +314,56 @@ export default function PackLogsPage() {
                 <th className="h-9 pl-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">Giờ</th>
               </tr>
             </thead>
-            <TableState
-              loading={loading}
-              empty={!loading && !error && rows.length === 0}
-              error={error ? new Error(error) : undefined}
-              onRetry={loadData}
-              colSpan={colSpan}
-              emptyContent={
-                emptyMessage ? (
-                  <tr>
-                    <td colSpan={colSpan} className="py-12 text-center">
-                      {emptyMessage}
+            <tbody>
+              <TableState
+                loading={loading}
+                empty={!loading && !error && filteredRows.length === 0}
+                error={error ? new Error(error) : undefined}
+                onRetry={loadData}
+                colSpan={colSpan}
+                emptyContent={
+                  emptyMessage ? (
+                    <tr>
+                      <td colSpan={colSpan} className="py-12 text-center">
+                        {emptyMessage}
+                      </td>
+                    </tr>
+                  ) : null
+                }
+              >
+                {filteredRows.map((row, index) => (
+                  <tr key={`${row.packCode}-${row.scannedAt}-${index}`} className="h-[42px] border-b border-line/80 transition-colors hover:bg-surface-alt/60">
+                    <td className="pr-3 font-mono text-[12px] font-medium text-ink">{row.session.sessionCode}</td>
+                    <td className="px-3 text-[12px] text-ink-soft">{row.packCode}</td>
+                    <td className="px-3 text-[12px] text-ink-soft">{row.station.name}</td>
+                    <td className="px-3 text-[12px] text-ink-soft">{row.staff.fullName}</td>
+                    <td className="px-3 text-[12px] text-ink-soft">
+                      <div className="min-w-0">
+                        <p className="truncate font-mono text-[12px]">{row.order ? row.order.expectedSku : row.expectedSku}</p>
+                        <p className="mt-0 truncate text-[11px] text-ink-faint">
+                          {row.order ? `${row.order.estimatedWeight}kg` : `${row.weight ?? ''}kg`}
+                        </p>
+                      </div>
                     </td>
+                    <td className="px-3 text-[12px]">
+                      <StatusLabel tone={matchStatusTone[row.result] ?? 'neutral'}>
+                        {matchStatusLabel[row.result] ?? row.result}
+                      </StatusLabel>
+                    </td>
+                    <td className="px-3 text-[12px] tabular-nums text-ink-soft">
+                      {row.weight ? `${row.weight}kg` : '—'}
+                    </td>
+                    <td className="px-3 text-[12px] text-ink-soft">{row.boxType ? boxTypeLabel(row.boxType) : '—'}</td>
+                    <td className="px-3 text-[12px]">
+                      <StatusLabel tone={sessionStatusTone[row.session.status] ?? 'neutral'}>
+                        {sessionStatusLabel[row.session.status] ?? row.session.status}
+                      </StatusLabel>
+                    </td>
+                    <td className="pl-3 text-[12px] tabular-nums text-ink-soft">{formatDateTimeVN(row.scannedAt)}</td>
                   </tr>
-                ) : null
-              }
-            >
-              {filteredRows.map((row, index) => (
-                <tr key={`${row.packCode}-${row.scannedAt}-${index}`} className="h-[42px] border-b border-line/80 transition-colors hover:bg-surface-alt/60">
-                  <td className="pr-3 font-mono text-[12px] font-medium text-ink">{row.session.sessionCode}</td>
-                  <td className="px-3 text-[12px] text-ink-soft">{row.packCode}</td>
-                  <td className="px-3 text-[12px] text-ink-soft">{row.station.name}</td>
-                  <td className="px-3 text-[12px] text-ink-soft">{row.staff.fullName}</td>
-                  <td className="px-3 text-[12px] text-ink-soft">
-                    <div className="min-w-0">
-                      <p className="truncate font-mono text-[12px]">{row.order ? row.order.expectedSku : row.expectedSku}</p>
-                      <p className="mt-0 truncate text-[11px] text-ink-faint">
-                        {row.order ? `${row.order.estimatedWeight}kg` : `${row.weight ?? ''}kg`}
-                      </p>
-                    </div>
-                  </td>
-                  <td className="px-3 text-[12px]">
-                    <StatusLabel tone={matchStatusTone[row.result]}>{matchStatusLabel[row.result]}</StatusLabel>
-                  </td>
-                  <td className="px-3 text-[12px] tabular-nums text-ink-soft">
-                    {row.weight ? `${row.weight}kg` : '—'}
-                  </td>
-                  <td className="px-3 text-[12px] text-ink-soft">{row.boxType ? boxTypeLabel(row.boxType) : '—'}</td>
-                  <td className="px-3 text-[12px]">
-                    <StatusLabel tone={sessionStatusTone[row.session.status]}>
-                      {sessionStatusLabel[row.session.status]}
-                    </StatusLabel>
-                  </td>
-                  <td className="pl-3 text-[12px] tabular-nums text-ink-soft">{formatDateTimeVN(row.scannedAt)}</td>
-                </tr>
-              ))}
-            </TableState>
+                ))}
+              </TableState>
+            </tbody>
           </table>
         </div>
       </EditorialSection>
@@ -371,11 +377,11 @@ export default function PackLogsPage() {
               <div key={anomaly.id} className="rounded-md border border-line bg-surface p-3">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-[12px] font-medium text-ink">
-                    {anomalyKindLabel[anomaly.kind]}
+                    {anomalyKindLabel[anomaly.kind] ?? anomaly.kind}
                   </p>
                   <div className="flex items-center gap-2">
-                    <StatusLabel tone={anomalySeverityTone[anomaly.severity]}>
-                      {anomalySeverityLabel[anomaly.severity]}
+                    <StatusLabel tone={anomalySeverityTone[anomaly.severity] ?? 'neutral'}>
+                      {anomalySeverityLabel[anomaly.severity] ?? anomaly.severity}
                     </StatusLabel>
                     <span className="text-[11px] text-ink-faint">
                       {formatDateTimeVN(anomaly.createdAt)}
@@ -421,8 +427,8 @@ export default function PackLogsPage() {
                   <div key={correction.id} className="rounded-md border border-line bg-surface p-3">
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-[12px] font-medium text-ink">{correction.packCode}</p>
-                      <StatusLabel tone={correctionStatusTone[correction.status]}>
-                        {correctionStatusLabel[correction.status]}
+                      <StatusLabel tone={correctionStatusTone[correction.status] ?? 'neutral'}>
+                        {correctionStatusLabel[correction.status] ?? correction.status}
                       </StatusLabel>
                     </div>
                     <p className="mt-1 text-[12px] text-ink-soft">

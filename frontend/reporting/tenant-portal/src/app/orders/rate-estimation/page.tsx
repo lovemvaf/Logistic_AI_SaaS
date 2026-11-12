@@ -6,17 +6,8 @@ import { EditorialPageHeader, EditorialSection, StatusLabel, EmptyNote } from 'u
 import { TableState } from 'ui-components';
 import { formatCurrency, formatDateVN, serviceLabel, serviceTone } from '@/lib/labels';
 import type { Product, ServiceLevel } from '@/lib/mock';
+import { estimateDongNaiRate, VOLUME_KG_PER_CBM } from 'shared-types';
 import { useEffect, useState, useCallback } from 'react';
-
-type RateModel = { base: number; perKm: number; perKg: number };
-
-const RATES: Record<ServiceLevel, RateModel> = {
-  STANDARD: { base: 24_000, perKm: 1_800, perKg: 3_500 },
-  EXPRESS: { base: 48_000, perKm: 3_600, perKg: 5_000 },
-  SAME_DAY: { base: 96_000, perKm: 6_000, perKg: 9_000 },
-};
-
-const VOLUME_KG_PER_CBM = 167;
 
 const DISTANCE_BANDS = [
   { label: '1-10 km', mid: 5 },
@@ -28,15 +19,22 @@ const DISTANCE_BANDS = [
 
 const QUANTITY_BANDS = ['1', '5', '15', '30', '50'];
 
-function roundToThousand(value: number) {
-  return Math.round(value / 1_000) * 1_000;
-}
-
-function estimateRate(service: ServiceLevel, distanceKm: number, weightKg: number, volumeCbm = 0): number {
-  const { base, perKm, perKg } = RATES[service];
-  const volumetric = volumeCbm > 0 ? Math.ceil(volumeCbm * VOLUME_KG_PER_CBM) : 0;
-  const chargeable = Math.max(weightKg, volumetric);
-  return roundToThousand(base + perKm * distanceKm + perKg * chargeable);
+function estimateRate(
+  service: ServiceLevel,
+  distanceKm: number,
+  weightKg: number,
+  volumeCbm = 0,
+  corridor: 'NORTH' | 'CENTRAL' | 'SOUTH' = 'CENTRAL',
+  codAmount = 0,
+) {
+  return estimateDongNaiRate({
+    serviceLevel: service,
+    distanceKm,
+    weightKg,
+    volumeCbm,
+    corridor,
+    codAmount,
+  });
 }
 
 type UserResult = {
@@ -144,7 +142,7 @@ export default function RateEstimationPage() {
         }
       }
 
-      const price = estimateRate(service, distanceKm, weightKg, volumeCbm);
+      const est = estimateRate(service, distanceKm, weightKg, volumeCbm, corridor, cod);
       setResult({
         service,
         corridor,
@@ -152,9 +150,11 @@ export default function RateEstimationPage() {
         weight: weightKg,
         volumeCbm,
         codAmount: cod,
-        price,
-        volumetric: chargeableWeight > weightKg,
+        price: est.totalEstimate,
+        volumetric: est.breakdown.volumetricApplied,
         source: 'local',
+        breakdown: est.breakdown,
+        formula: est.formula,
       });
     },
     [service, corridor, distance, weight, volume, codAmount],
@@ -174,7 +174,7 @@ export default function RateEstimationPage() {
     service,
     bands: QUANTITY_BANDS.map((bandLabel) => ({
       label: `${bandLabel} kg`,
-      value: estimateRate(service, band.mid, Number(bandLabel)),
+      value: estimateRate(service, band.mid, Number(bandLabel), 0, corridor, 0).totalEstimate,
     })),
   }));
 
@@ -378,39 +378,50 @@ export default function RateEstimationPage() {
         ) : null}
       </EditorialSection>
 
-      <EditorialSection eyebrow="Tham chiếu" title="Bảng định giá theo dịch vụ">
-        <TableState
-          loading={loading}
-          empty={!loading && reference.length === 0}
-          error={error ? new Error(error) : undefined}
-          onRetry={loadProducts}
-          colSpan={5}
-          emptyContent={<EmptyNote>Chưa có dữ liệu mẫu để xây dựng bảng định giá.</EmptyNote>}
-        >
-          <div className="overflow-x-auto rounded-lg border border-line">
-            <table className="w-full border-collapse">
-              <thead className="border-b border-line bg-surface-alt">
-                <tr>
-                  <th className="px-4 py-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">
-                    Dịch vụ
+      <EditorialSection eyebrow="Tham chiếu" title="Bảng định giá theo dịch vụ (hành lang đang chọn)">
+        <div className="overflow-x-auto rounded-lg border border-line">
+          <table className="w-full border-collapse">
+            <thead className="border-b border-line bg-surface-alt">
+              <tr>
+                <th className="px-4 py-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">
+                  Dịch vụ · Cự ly
+                </th>
+                {QUANTITY_BANDS.map((band) => (
+                  <th
+                    key={band}
+                    className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint"
+                  >
+                    {band} kg
                   </th>
-                  {QUANTITY_BANDS.map((band) => (
-                    <th
-                      key={band}
-                      className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint"
-                    >
-                      {band} kg
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-line text-[13px]">
-                {reference.map((row) => (
-                  <tr key={row.service} className="hover:bg-surface-alt">
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line text-[13px]">
+              <TableState
+                loading={loading}
+                empty={!loading && reference.length === 0}
+                error={error ? new Error(error) : undefined}
+                onRetry={loadProducts}
+                colSpan={6}
+                emptyContent={
+                  <tr>
+                    <td colSpan={6} className="px-4 py-6 text-center text-ink-faint">
+                      Chưa có dữ liệu mẫu để xây dựng bảng định giá.
+                    </td>
+                  </tr>
+                }
+              >
+                {reference.map((row, idx) => (
+                  <tr key={`${row.service}-${DISTANCE_BANDS[idx]?.label ?? idx}`} className="hover:bg-surface-alt">
                     <td className="px-4 py-2 text-[13px]">
-                      <StatusLabel tone={serviceTone(row.service)}>
-                        {serviceLabel(row.service)}
-                      </StatusLabel>
+                      <div className="flex items-center gap-2">
+                        <StatusLabel tone={serviceTone(row.service)}>
+                          {serviceLabel(row.service)}
+                        </StatusLabel>
+                        <span className="text-[11px] font-mono text-ink-faint">
+                          {DISTANCE_BANDS[idx]?.label}
+                        </span>
+                      </div>
                     </td>
                     {row.bands.map(({ label, value }) => (
                       <td
@@ -422,10 +433,10 @@ export default function RateEstimationPage() {
                     ))}
                   </tr>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        </TableState>
+              </TableState>
+            </tbody>
+          </table>
+        </div>
       </EditorialSection>
 
       <EditorialSection title="Hướng dẫn">

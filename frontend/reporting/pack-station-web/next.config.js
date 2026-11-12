@@ -5,6 +5,7 @@ const isVercel = process.env.VERCEL === '1';
 
 const nextConfig = {
   ...(isVercel ? {} : { output: 'standalone' }),
+  transpilePackages: ['ui-kit', 'ui-components'],
   typescript: { ignoreBuildErrors: false },
   eslint: { ignoreDuringBuilds: true },
   reactStrictMode: true,

@@ -326,6 +326,9 @@ importers:
       demo-cloud-api:
         specifier: workspace:*
         version: link:../../../packages/demo-cloud-api
+      map-components:
+        specifier: workspace:*
+        version: link:../../../packages/map-components
       next:
         specifier: 15.5.28
         version: 15.5.28(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(babel-plugin-react-compiler@1.0.0)(react-dom@19.0.0(react@19.0.0))(react@19.0.0)
@@ -341,6 +344,9 @@ importers:
       recharts:
         specifier: ^3.8.1
         version: 3.8.1(@types/react@19.0.0)(react-dom@19.0.0(react@19.0.0))(react-is@19.2.6)(react@19.0.0)(redux@5.0.1)
+      shared-types:
+        specifier: workspace:*
+        version: link:../../../packages/shared-types
       swr:
         specifier: ^2.4.1
         version: 2.4.1(react@19.0.0)
@@ -472,6 +478,9 @@ importers:
       demo-cloud-api:
         specifier: workspace:*
         version: link:../../../packages/demo-cloud-api
+      map-components:
+        specifier: workspace:*
+        version: link:../../../packages/map-components
       next:
         specifier: 15.5.28
         version: 15.5.28(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(babel-plugin-react-compiler@1.0.0)(react-dom@19.0.0(react@19.0.0))(react@19.0.0)
@@ -481,6 +490,9 @@ importers:
       react-dom:
         specifier: 19.0.0
         version: 19.0.0(react@19.0.0)
+      shared-types:
+        specifier: workspace:*
+        version: link:../../../packages/shared-types
       swr:
         specifier: ^2.4.1
         version: 2.4.1(react@19.0.0)
@@ -603,6 +615,9 @@ importers:
       demo-cloud-api:
         specifier: workspace:*
         version: link:../../../packages/demo-cloud-api
+      map-components:
+        specifier: workspace:*
+        version: link:../../../packages/map-components
       next:
         specifier: 15.5.28
         version: 15.5.28(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(babel-plugin-react-compiler@1.0.0)(react-dom@19.0.0(react@19.0.0))(react@19.0.0)
@@ -618,6 +633,12 @@ importers:
       react-dropzone:
         specifier: ^14.2.3
         version: 14.4.1(react@19.0.0)
+      recharts:
+        specifier: ^3.8.1
+        version: 3.8.1(@types/react@19.0.0)(react-dom@19.0.0(react@19.0.0))(react-is@19.2.6)(react@19.0.0)(redux@5.0.1)
+      shared-types:
+        specifier: workspace:*
+        version: link:../../../packages/shared-types
       swr:
         specifier: ^2.4.1
         version: 2.4.1(react@19.0.0)
@@ -700,10 +721,10 @@ importers:
         specifier: ^1.9.12
         version: 1.9.21
       '@types/react':
-        specifier: ^19.0.0
-        version: 19.2.15
+        specifier: 19.0.0
+        version: 19.0.0
       '@types/react-dom':
-        specifier: ^19.0.0
+        specifier: 19.0.0
         version: 19.0.0
       typescript:
         specifier: ^5.5.3

@@ -295,22 +295,42 @@ export function DemoControlCenter({
   const apiCall = useCallback(
     async <T = any>(
       path: string,
-      opts: { method?: string; body?: any; activePortal?: DemoPortalId; tokenOverride?: string } = {},
+      opts: { method?: string; body?: any; activePortal?: DemoPortalId; tokenOverride?: string; timeoutMs?: number } = {},
     ): Promise<{ ok: boolean; status: number; data: T }> => {
       const targetPortal = opts.activePortal || portal;
-      const res = await fetch(`${getApiBase()}${path}`, {
-        method: opts.method || 'GET',
-        credentials: 'include',
-        headers: buildHeaders(targetPortal, opts.tokenOverride),
-        ...(opts.body !== undefined ? { body: JSON.stringify(opts.body) } : {}),
-      });
-      let data: any = {};
+      const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      const timer = controller
+        ? setTimeout(() => controller.abort(), opts.timeoutMs ?? 12000)
+        : null;
       try {
-        data = await res.json();
-      } catch {
-        data = {};
+        const res = await fetch(`${getApiBase()}${path}`, {
+          method: opts.method || 'GET',
+          credentials: 'include',
+          signal: controller?.signal,
+          headers: buildHeaders(targetPortal, opts.tokenOverride),
+          ...(opts.body !== undefined ? { body: JSON.stringify(opts.body) } : {}),
+        });
+        let data: any = {};
+        try {
+          data = await res.json();
+        } catch {
+          data = {};
+        }
+        return { ok: res.ok, status: res.status, data };
+      } catch (err: any) {
+        return {
+          ok: false,
+          status: 0,
+          data: {
+            message:
+              err?.name === 'AbortError'
+                ? 'Hết thời gian kết nối máy chủ (12s). Vui lòng thử lại.'
+                : err?.message || 'Không thể kết nối máy chủ.',
+          } as unknown as T,
+        };
+      } finally {
+        if (timer) clearTimeout(timer);
       }
-      return { ok: res.ok, status: res.status, data };
     },
     [buildHeaders, portal],
   );
@@ -354,6 +374,17 @@ export function DemoControlCenter({
       refreshState(true);
     }
   }, [drawerOpen, refreshState]);
+
+  useEffect(() => {
+    if (!drawerOpen || typeof window === 'undefined') return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setDrawerOpen(false);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [drawerOpen]);
 
   const handlePortalSwitch = async (target: DemoPortalId, explicitPath?: string) => {
     if (target === portal) {

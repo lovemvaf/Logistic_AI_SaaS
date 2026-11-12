@@ -37,13 +37,13 @@ const getZoneFillColor = (zoneType: string): string => {
   }
 };
 
-export const RoutePolygon: React.FC<RoutePolygonProps> = ({
+export function RoutePolygon({
   center,
   zoom,
   geofences = [],
   route = [],
   onGeofenceClick,
-}) => {
+}: RoutePolygonProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const layersRef = useRef<any[]>([]);
@@ -182,4 +182,4 @@ export const RoutePolygon: React.FC<RoutePolygonProps> = ({
       )}
     </div>
   );
-};
+}

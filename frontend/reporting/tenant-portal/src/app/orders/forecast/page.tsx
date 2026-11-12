@@ -12,6 +12,7 @@ import { TableState } from 'ui-components';
 import { formatNumber, formatDateVN } from '@/lib/labels';
 import type { Order, ServiceLevel } from '@/lib/mock';
 import { useEffect, useState, useCallback } from 'react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 type DailyRow = {
   date: string;
@@ -126,13 +127,16 @@ function analyze(orders: Order[]): Analysis {
       row.created += 1;
       if (order.status === 'DELIVERED') row.delivered += 1;
     }
-    byService[order.service].created += 1;
-    if (order.status === 'DELIVERED') byService[order.service].delivered += 1;
+    const serviceKey: ServiceLevel =
+      order.service === 'EXPRESS' || order.service === 'SAME_DAY' ? order.service : 'STANDARD';
+    byService[serviceKey].created += 1;
+    if (order.status === 'DELIVERED') byService[serviceKey].delivered += 1;
 
     const weekKey = isoWeekKey(new Date(order.createdAt));
     const stats = weekMap[weekKey] ?? { created: 0, delivered: 0 };
     stats.created += 1;
     if (order.status === 'DELIVERED') stats.delivered += 1;
+    weekMap[weekKey] = stats;
   }
 
   const createdTotal = daily.reduce((total, r) => total + r.created, 0);
@@ -267,31 +271,62 @@ export default function DemandForecastPage() {
 
       <MetricBand metrics={metrics} />
 
+      {analysis ? (
+        <EditorialSection eyebrow="Biểu đồ" title="Diễn biến 7 ngày qua & Dự báo 7 ngày tới" action={<StatusLabel tone="info">AI Moving Average</StatusLabel>}>
+          <div className="h-60 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={[
+                  ...analysis.daily.map((d) => ({ label: d.label, actual: d.created, delivered: d.delivered, forecast: null as number | null })),
+                  ...analysis.forecast.map((f) => ({ label: f.label, actual: null as number | null, delivered: null as number | null, forecast: f.predicted })),
+                ]}
+                margin={{ top: 8, right: 12, left: -16, bottom: 0 }}
+              >
+                <CartesianGrid strokeDasharray="1 1" vertical={false} stroke="#ded7cb" />
+                <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#62665c' }} />
+                <YAxis allowDecimals={false} axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#62665c' }} />
+                <Tooltip contentStyle={{ backgroundColor: '#fbf9f5', borderRadius: '6px', border: '1px solid #ded7cb', color: '#20241f', fontSize: '12px' }} />
+                <Legend wrapperStyle={{ fontSize: 11, color: '#62665c' }} />
+                <Bar dataKey="actual" name="Đơn tạo" fill="#2f4a3c" radius={[2, 2, 0, 0]} />
+                <Bar dataKey="delivered" name="Đã giao" fill="#3f6b4f" radius={[2, 2, 0, 0]} />
+                <Bar dataKey="forecast" name="Dự báo" fill="#4c6570" radius={[2, 2, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </EditorialSection>
+      ) : null}
+
       <EditorialSection
         eyebrow="Xu hướng hàng ngày"
         title="Số đơn tạo và giao thành công theo ngày"
         action={<StatusLabel tone="info">7 ngày gần nhất</StatusLabel>}
       >
         <div className="overflow-x-auto rounded-lg border border-line">
-          <TableState
-            loading={loading}
-            empty={!loading && analysis?.daily.every((r) => r.created === 0)}
-            error={error ? new Error(error) : undefined}
-            onRetry={load}
-            colSpan={5}
-            emptyContent={<EmptyNote>Chưa có đơn hàng nào trong 7 ngày gần nhất.</EmptyNote>}
-          >
-            <table className="w-full border-collapse">
-              <thead className="border-b border-line bg-surface-alt">
-                <tr>
-                  <th className="px-4 py-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Ngày</th>
-                  <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Đơn tạo</th>
-                  <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Đã giao</th>
-                  <th className="px-4 py-2 text-center text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">So với hôm qua</th>
-                  <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Xu hướng</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-line text-[13px]">
+          <table className="w-full border-collapse">
+            <thead className="border-b border-line bg-surface-alt">
+              <tr>
+                <th className="px-4 py-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Ngày</th>
+                <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Đơn tạo</th>
+                <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Đã giao</th>
+                <th className="px-4 py-2 text-center text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">So với hôm qua</th>
+                <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Xu hướng</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line text-[13px]">
+              <TableState
+                loading={loading}
+                empty={!loading && (!analysis || analysis.daily.length === 0)}
+                error={error ? new Error(error) : undefined}
+                onRetry={load}
+                colSpan={5}
+                emptyContent={
+                  <tr>
+                    <td colSpan={5} className="px-4 py-8 text-center text-ink-faint">
+                      Chưa có đơn hàng nào trong 7 ngày gần nhất.
+                    </td>
+                  </tr>
+                }
+              >
                 {analysis?.daily.map((row, index) => {
                   const prev = analysis.daily[index - 1] ?? { created: 0 };
                   const delta = row.created - prev.created;
@@ -325,9 +360,9 @@ export default function DemandForecastPage() {
                     </tr>
                   );
                 })}
-              </tbody>
-            </table>
-          </TableState>
+              </TableState>
+            </tbody>
+          </table>
         </div>
         <EmptyNote>
           Số liệu xác thực: đơn có trạng thái DELIVERED được tính 1 giao thành công, các ngày trống hiển thị 0. Phương pháp ước lượng mở rộng từ chuỗi giá trị.
@@ -340,16 +375,30 @@ export default function DemandForecastPage() {
         action={<StatusLabel tone="info">± biên độ</StatusLabel>}
       >
         <div className="overflow-x-auto rounded-lg border border-line">
-          <TableState
-            loading={loading}
-            empty={!loading && analysis?.forecast.length === 0}
-            error={error ? new Error(error) : undefined}
-            onRetry={load}
-            colSpan={4}
-            emptyContent={<EmptyNote>Chưa có dữ liệu để dự báo.</EmptyNote>}
-          >
-            <table className="w-full border-collapse">
-              <tbody className="divide-y divide-line text-[13px]">
+          <table className="w-full border-collapse">
+            <thead className="border-b border-line bg-surface-alt">
+              <tr>
+                <th className="px-4 py-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Ngày</th>
+                <th className="px-4 py-2 text-center text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Dự báo (đơn)</th>
+                <th className="px-4 py-2 text-center text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Biên độ</th>
+                <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Cơ sở</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line text-[13px]">
+              <TableState
+                loading={loading}
+                empty={!loading && (!analysis || analysis.forecast.length === 0)}
+                error={error ? new Error(error) : undefined}
+                onRetry={load}
+                colSpan={4}
+                emptyContent={
+                  <tr>
+                    <td colSpan={4} className="px-4 py-8 text-center text-ink-faint">
+                      Chưa có dữ liệu để dự báo.
+                    </td>
+                  </tr>
+                }
+              >
                 {analysis?.forecast.map((row) => (
                   <tr key={row.date} className="hover:bg-surface-alt">
                     <td className="px-4 py-2 text-[13px] font-medium text-ink">
@@ -364,24 +413,38 @@ export default function DemandForecastPage() {
                     </td>
                   </tr>
                 ))}
-              </tbody>
-            </table>
-          </TableState>
+              </TableState>
+            </tbody>
+          </table>
         </div>
       </EditorialSection>
 
       <EditorialSection eyebrow="Dịch vụ" title="Tỷ trọng theo loại dịch vụ">
         <div className="overflow-x-auto rounded-lg border border-line">
-          <TableState
-            loading={loading}
-            empty={!loading && analysis?.byService.every((r) => r.created === 0)}
-            error={error ? new Error(error) : undefined}
-            onRetry={load}
-            colSpan={4}
-            emptyContent={<EmptyNote>Chưa có đơn hàng dịch vụ nào để phân tích.</EmptyNote>}
-          >
-            <table className="w-full border-collapse">
-              <tbody className="divide-y divide-line text-[13px]">
+          <table className="w-full border-collapse">
+            <thead className="border-b border-line bg-surface-alt">
+              <tr>
+                <th className="px-4 py-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Dịch vụ</th>
+                <th className="px-4 py-2 text-center text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Đơn tạo</th>
+                <th className="px-4 py-2 text-center text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Đã giao</th>
+                <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Tỷ trọng</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line text-[13px]">
+              <TableState
+                loading={loading}
+                empty={!loading && (!analysis || analysis.byService.every((r) => r.created === 0))}
+                error={error ? new Error(error) : undefined}
+                onRetry={load}
+                colSpan={4}
+                emptyContent={
+                  <tr>
+                    <td colSpan={4} className="px-4 py-8 text-center text-ink-faint">
+                      Chưa có đơn hàng dịch vụ nào để phân tích.
+                    </td>
+                  </tr>
+                }
+              >
                 {analysis?.byService.map((row) => (
                   <tr key={row.service} className="hover:bg-surface-alt">
                     <td className="px-4 py-2 text-[13px] font-medium text-ink">{row.service}</td>
@@ -402,9 +465,9 @@ export default function DemandForecastPage() {
                     </td>
                   </tr>
                 ))}
-              </tbody>
-            </table>
-          </TableState>
+              </TableState>
+            </tbody>
+          </table>
         </div>
         <EmptyNote>
           Tỷ trọng tính trên tổng số đơn hàng tạo ra trong 7 ngày gần nhất. Tuỳ vào khả năng thực tế chuyển dịch doanh số.

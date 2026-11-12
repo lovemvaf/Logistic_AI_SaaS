@@ -11,7 +11,7 @@ import {
   EmptyNote,
 } from 'ui-kit';
 import type { EditorialMetric } from 'ui-kit';
-import { Button, DataState, Select, TableState } from 'ui-components';
+import { Button, Select, TableState } from 'ui-components';
 import type { Driver, DriverReport } from '@/lib/mock';
 import {
   driverStatusLabel,
@@ -20,16 +20,17 @@ import {
   formatNumber,
 } from '@/lib/labels';
 
-const MONTHS = [
-  '2026-04',
-  '2026-05',
-  '2026-06',
-  '2026-07',
-  '2026-08',
-  '2026-09',
-  '2026-10',
-  '2026-11',
-];
+function buildRecentMonths(count = 8): string[] {
+  const now = new Date();
+  const list: string[] = [];
+  for (let i = count - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    list.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+  }
+  return list;
+}
+
+const MONTHS = buildRecentMonths(8);
 
 /**
  * Điểm đánh giá tài xế: an toàn, nhiên liệu/đơn, đúng giờ, đánh giá.
@@ -81,7 +82,7 @@ export default function DriverRankingPage() {
 
   const [driver, setDriver] = useState<Driver | null>(null);
   const [reports, setReports] = useState<DriverReport[]>([]);
-  const [month, setMonth] = useState('2026-11');
+  const [month, setMonth] = useState(MONTHS[MONTHS.length - 1]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -197,69 +198,67 @@ export default function DriverRankingPage() {
         }
       >
         <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
-          <div className="md:col-span-3">
-            <DataState loading={loading} empty={!loading && reports.length === 0}>
-              <table className="min-w-full divide-y divide-line text-[13px]">
-                <thead className="bg-surface-alt">
-                  <tr>
-                    <th className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">
-                      TT
-                    </th>
-                    <th className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">
-                      Tài xế
-                    </th>
-                    <th className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint text-right">
-                      Điểm
-                    </th>
-                    <th className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">
-                      Rủi ro
-                    </th>
-                    <th className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint text-right">
-                      Nhiên liệu/đơn
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-line">
-                  <TableState
-                    loading={loading}
-                    empty={!loading && reports.length === 0}
-                    onRetry={load}
-                    colSpan={5}
-                    emptyContent={
-                      <tr>
-                        <td colSpan={5} className="px-3 py-8 text-center text-ink-faint">
-                          Chưa có dữ liệu xếp hạng cho tháng {month}.
-                        </td>
-                      </tr>
-                    }
-                    error={error ? new Error(error) : undefined}
-                  >
-                    {sorted.map((row, index) => (
-                      <tr
-                        key={row.driverId}
-                        className={`${row.driverId === driverId ? 'bg-accent-soft' : ''} hover:bg-surface-alt cursor-pointer`}
-                        onClick={() => router.push(`/drivers/${row.driverId}/ranking`)}
-                      >
-                        <td className="px-3 py-2 font-medium text-ink-faint">{index + 1}</td>
-                        <td className="px-3 py-2">
-                          <p className="text-[13px] font-medium text-ink">{row.driverName}</p>
-                          <p className="text-[11px] text-ink-faint">{row.status} · {row.phone}</p>
-                        </td>
-                        <td className="px-3 py-2 text-right tabular-nums font-semibold text-ink">
-                          {scoreOf(row)}
-                        </td>
-                        <td className="px-3 py-2">
-                          <StatusLabel tone={riskOf(row).tone}>{riskOf(row).label}</StatusLabel>
-                        </td>
-                        <td className="px-3 py-2 text-right tabular-nums text-ink-faint">
-                          {formatCurrency(Math.round(row.fuelCost / Math.max(1, row.orders)))}
-                        </td>
-                      </tr>
-                    ))}
-                  </TableState>
-                </tbody>
-              </table>
-            </DataState>
+          <div className="md:col-span-3 overflow-x-auto">
+            <table className="min-w-full divide-y divide-line text-[13px]">
+              <thead className="bg-surface-alt">
+                <tr>
+                  <th className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">
+                    TT
+                  </th>
+                  <th className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">
+                    Tài xế
+                  </th>
+                  <th className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint text-right">
+                    Điểm
+                  </th>
+                  <th className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">
+                    Rủi ro
+                  </th>
+                  <th className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint text-right">
+                    Nhiên liệu/đơn
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-line">
+                <TableState
+                  loading={loading}
+                  empty={!loading && reports.length === 0}
+                  onRetry={load}
+                  colSpan={5}
+                  emptyContent={
+                    <tr>
+                      <td colSpan={5} className="px-3 py-8 text-center text-ink-faint">
+                        Chưa có dữ liệu xếp hạng cho tháng {month}.
+                      </td>
+                    </tr>
+                  }
+                  error={error ? new Error(error) : undefined}
+                >
+                  {sorted.map((row, index) => (
+                    <tr
+                      key={row.driverId}
+                      className={`${row.driverId === driverId ? 'bg-accent-soft' : ''} hover:bg-surface-alt cursor-pointer`}
+                      onClick={() => router.push(`/drivers/${row.driverId}/ranking`)}
+                    >
+                      <td className="px-3 py-2 font-medium text-ink-faint">{index + 1}</td>
+                      <td className="px-3 py-2">
+                        <p className="text-[13px] font-medium text-ink">{row.driverName}</p>
+                        <p className="text-[11px] text-ink-faint">{row.status} · {row.phone}</p>
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums font-semibold text-ink">
+                        {scoreOf(row)}
+                      </td>
+                      <td className="px-3 py-2">
+                        <StatusLabel tone={riskOf(row).tone}>{riskOf(row).label}</StatusLabel>
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums text-ink-faint">
+                        {formatCurrency(Math.round(row.fuelCost / Math.max(1, row.orders)))}
+                      </td>
+                    </tr>
+                  ))}
+                </TableState>
+              </tbody>
+            </table>
           </div>
 
           <div className="md:col-span-2 space-y-4">

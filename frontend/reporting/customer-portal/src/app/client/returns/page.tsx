@@ -157,41 +157,41 @@ export default function ClientReturns() {
       </EditorialSection>
 
       <EditorialSection eyebrow="Danh sách" title={listSummary(filtered.length, 'yêu cầu trả hàng')}>
-        <TableState
-          loading={loading}
-          empty={!filtered.length}
-          error={error || undefined}
-          colSpan={6}
-          emptyTitle="Chưa có yêu cầu"
-          emptyDescription="Yêu cầu trả hàng từ các đơn đã giao sẽ hiển thị ở đây."
-          onRetry={fetchReturns}
-        >
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] border-collapse text-left">
-              <caption className="sr-only">Bảng yêu cầu trả hàng của công ty</caption>
-              <thead>
-                <tr className="border-b border-line">
-                  <th scope="col" className="h-9 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-                    Mã trả hàng
-                  </th>
-                  <th scope="col" className="h-9 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-                    Đơn hàng
-                  </th>
-                  <th scope="col" className="h-9 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-                    Lý do
-                  </th>
-                  <th scope="col" className="h-9 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-                    Trạng thái
-                  </th>
-                  <th scope="col" className="h-9 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-                    Hoàn tiền dự kiến
-                  </th>
-                  <th scope="col" className="h-9 pl-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-                    Ngày tạo
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] border-collapse text-left">
+            <caption className="sr-only">Bảng yêu cầu trả hàng của công ty</caption>
+            <thead>
+              <tr className="border-b border-line">
+                <th scope="col" className="h-9 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+                  Mã trả hàng
+                </th>
+                <th scope="col" className="h-9 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+                  Đơn hàng
+                </th>
+                <th scope="col" className="h-9 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+                  Lý do
+                </th>
+                <th scope="col" className="h-9 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+                  Trạng thái
+                </th>
+                <th scope="col" className="h-9 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+                  Hoàn tiền dự kiến
+                </th>
+                <th scope="col" className="h-9 pl-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+                  Ngày tạo
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <TableState
+                loading={loading}
+                empty={!filtered.length}
+                error={error || undefined}
+                colSpan={6}
+                emptyTitle="Chưa có yêu cầu"
+                emptyDescription="Yêu cầu trả hàng từ các đơn đã giao sẽ hiển thị ở đây."
+                onRetry={fetchReturns}
+              >
                 {filtered.map((row) => (
                   <tr key={row.id} className="h-[42px] border-b border-line/80 hover:bg-surface-alt/60">
                     <td className="pr-3 font-mono text-[12px] font-medium text-ink">{row.returnCode}</td>
@@ -206,10 +206,10 @@ export default function ClientReturns() {
                     <td className="px-3 text-[12px] text-ink-soft">{formatDateVN(row.createdAt)}</td>
                   </tr>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        </TableState>
+              </TableState>
+            </tbody>
+          </table>
+        </div>
       </EditorialSection>
 
       <Modal

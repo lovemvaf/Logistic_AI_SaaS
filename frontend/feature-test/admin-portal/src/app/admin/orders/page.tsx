@@ -205,11 +205,11 @@ export default function OrdersPage() {
                     <td className="px-3">
                       {isClientRole && !isMockDataSource ? (
                         <span className="text-[11px] font-medium text-ink">
-                          {order.status?.replace(/_/g, ' ')}
+                          {(order.status || 'NEW').replace(/_/g, ' ')}
                         </span>
                       ) : (
                         <select
-                          value={order.status}
+                          value={order.status || 'NEW'}
                           onChange={(e) => void handleStatusChange(order, e.target.value as Order['status'])}
                           className="h-7 rounded-md border border-line bg-surface px-2 text-[11px] font-medium text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent/15"
                         >

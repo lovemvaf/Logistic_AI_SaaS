@@ -8,6 +8,7 @@ const isVercel = process.env.VERCEL === '1';
 
 const nextConfig = {
   ...(isVercel ? {} : { output: 'standalone' }),
+  transpilePackages: ['map-components', 'shared-types', 'ui-kit', 'ui-components'],
   typescript: { ignoreBuildErrors: false },
   eslint: { ignoreDuringBuilds: true },
   reactStrictMode: true,

@@ -6,18 +6,20 @@
     "dev": "next dev -p 4001",
     "build": "next build",
     "start": "next start -p 4001",
-    "vercel-build": "pnpm --filter shared-types build && pnpm --filter prisma-schemas exec prisma generate && pnpm --filter demo-cloud-api build && pnpm --filter ui-components build && pnpm --filter ui-kit build && next build"
+    "vercel-build": "pnpm --filter shared-types build && pnpm --filter prisma-schemas exec prisma generate && pnpm --filter demo-cloud-api build && pnpm --filter ui-components build && pnpm --filter ui-kit build && pnpm --filter map-components build && next build"
   },
   "dependencies": {
     "@react-oauth/google": "^0.13.5",
     "axios": "^1.16.1",
     "clsx": "^2.1.1",
     "demo-cloud-api": "workspace:*",
+    "map-components": "workspace:*",
     "next": "15.5.28",
     "phosphor-react": "^1.4.1",
     "react": "19.0.0",
     "react-dom": "19.0.0",
     "recharts": "^3.8.1",
+    "shared-types": "workspace:*",
     "swr": "^2.4.1",
     "tailwind-merge": "^2.1.1",
     "ui-components": "workspace:*",

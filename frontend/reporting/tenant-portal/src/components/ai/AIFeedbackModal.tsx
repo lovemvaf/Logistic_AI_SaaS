@@ -17,11 +17,13 @@ interface AIFeedbackModalProps {
 export function AIFeedbackModal({ isOpen, onClose, predictionData, resourceId, resourceType }: AIFeedbackModalProps) {
   const [correctedValue, setCorrectedValue] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [feedbackStatus, setFeedbackStatus] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null);
 
   if (!isOpen) return null;
 
   const handleSubmit = async () => {
     setSubmitting(true);
+    setFeedbackStatus(null);
     try {
       await api.post('/logistics/finance/ai/feedback', {
         modelId: 'demand-v1',
@@ -33,11 +35,21 @@ export function AIFeedbackModal({ isOpen, onClose, predictionData, resourceId, r
         tenant_id: 'demo-tenant',
         schema_name: 'tenant'
       });
-      alert("Thank you! Your feedback has been recorded. AI Core is evolving.");
-      onClose();
-    } catch (err) {
-      console.error("Feedback failed:", err);
-      alert("Failed to submit feedback.");
+      setFeedbackStatus({
+        tone: 'success',
+        text: 'Cảm ơn! Phản hồi hiệu chỉnh đã được ghi nhận vào SmartGen AI Core.',
+      });
+      setTimeout(() => {
+        setFeedbackStatus(null);
+        setCorrectedValue('');
+        onClose();
+      }, 900);
+    } catch (err: any) {
+      console.error('Feedback failed:', err);
+      setFeedbackStatus({
+        tone: 'danger',
+        text: err?.response?.data?.message || 'Không gửi được phản hồi hiệu chỉnh.',
+      });
     } finally {
       setSubmitting(false);
     }
@@ -75,6 +87,19 @@ export function AIFeedbackModal({ isOpen, onClose, predictionData, resourceId, r
           <p className="text-xs text-inkSoft leading-relaxed">
             By submitting this correction, you are directly training the **SmartGen AI Core**. Your input will be used to fine-tune future forecasts for this tenant.
           </p>
+
+          {feedbackStatus ? (
+            <div
+              role={feedbackStatus.tone === 'danger' ? 'alert' : 'status'}
+              className={`rounded-lg border px-3 py-2 text-xs ${
+                feedbackStatus.tone === 'success'
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+                  : 'border-red-200 bg-red-50 text-red-800'
+              }`}
+            >
+              {feedbackStatus.text}
+            </div>
+          ) : null}
 
           <div className="flex gap-3 pt-4">
             <Button variant="outline" className="flex-1" onClick={onClose}>CANCEL</Button>

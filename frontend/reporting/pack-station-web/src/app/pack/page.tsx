@@ -95,12 +95,14 @@ export default function PackPage() {
 
   // --- Camera / AI ---
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [cameraMode, setCameraMode] = useState<'VIRTUAL' | 'HARDWARE'>('VIRTUAL');
   const [model, setModel] = useState<mobilenet.MobileNet | null>(null);
+  const [modelLoading, setModelLoading] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
   const [modelError, setModelError] = useState<string | null>(null);
   const [prediction, setPrediction] = useState<AiPredictionResult | null>(null);
   const [cvNotice, setCvNotice] = useState<string>(
-    'Đang dùng trọng số ImageNet mặc định (chưa fine-tune cho 12 SKU kho). Luôn xác nhận bằng barcode hoặc kiểm tra trực tiếp trước khi đóng kiện.',
+    'Camera Ảo CV đang hoạt động ở chế độ giả lập kho (không cần webcam vật lý). Luôn xác nhận bằng barcode hoặc kiểm tra trực tiếp trước khi đóng kiện.',
   );
   const [classifying, setClassifying] = useState(false);
   const [autoCvEnabled, setAutoCvEnabled] = useState(true);
@@ -170,11 +172,18 @@ export default function PackPage() {
     }
   }, [model, classifying]);
 
-  /** Mở camera trước; nếu có camera mới nạp MobileNet, tránh tải weights CDN không cần thiết. */
+  /** Chỉ bật webcam và nạp MobileNet khi người vận hành chọn "Bật Camera thật". */
   useEffect(() => {
+    if (cameraMode !== 'HARDWARE') {
+      stopVideo();
+      return;
+    }
+
     let cancelled = false;
 
     const loadModel = async () => {
+      setModelLoading(true);
+      setModelError(null);
       try {
         const cameraAvailable = await startVideo();
         if (!cameraAvailable || cancelled) return;
@@ -185,18 +194,20 @@ export default function PackPage() {
       } catch (err: any) {
         if (cancelled) return;
         setModelError(
-          `Không tải được model AI: ${err?.message || 'Mạng chặn hoặc WebGL/backend không khả dụng'}. Chế độ quét mã vẫn hoạt động bình thường.`,
+          `Không tải được model AI: ${err?.message || 'Mạng chặn hoặc WebGL/backend không khả dụng'}. Chế độ Camera Ảo và quét mã vẫn hoạt động bình thường.`,
         );
+      } finally {
+        if (!cancelled) setModelLoading(false);
       }
     };
 
-    loadModel();
+    void loadModel();
 
     return () => {
       cancelled = true;
       stopVideo();
     };
-  }, [startVideo, stopVideo]);
+  }, [cameraMode, startVideo, stopVideo]);
 
   /** Vòng lặp nhận diện định kỳ mỗi 1.5s khi camera + model sẵn sàng. */
   useEffect(() => {
@@ -605,10 +616,91 @@ export default function PackPage() {
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
         {/* Cột trái: camera / AI + đơn hàng chờ */}
         <section className="space-y-4">
-          <EditorialSection eyebrow="Camera / AI" title="Nhận diện sản phẩm">
-            {modelError ? (
+          <EditorialSection
+            eyebrow="Camera / AI"
+            title="Nhận diện sản phẩm"
+            action={
+              <div className="flex items-center gap-2">
+                {cameraMode === 'HARDWARE' ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      stopVideo();
+                      setCameraMode('VIRTUAL');
+                      setModelError(null);
+                    }}
+                  >
+                    Dùng Camera Ảo
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setModelError(null);
+                      setCameraMode('HARDWARE');
+                    }}
+                  >
+                    Bật Camera thật
+                  </Button>
+                )}
+              </div>
+            }
+          >
+            {cameraMode === 'VIRTUAL' || modelError ? (
               <div className="space-y-3">
-                <EmptyNote>{modelError}</EmptyNote>
+                <div className="rounded-lg border border-line bg-surface-alt p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2 pb-2">
+                    <div className="flex items-center gap-2">
+                      <StatusLabel tone={modelError ? 'warning' : 'success'}>
+                        {modelError ? 'Dự phòng Camera Ảo' : 'Camera Ảo CV: Sẵn sàng'}
+                      </StatusLabel>
+                      <span className="font-mono text-[11px] text-ink-soft">
+                        {selectedOrder ? `${selectedOrder.packCode} / ${selectedOrder.expectedSku}` : 'Chưa chọn kiện'}
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-ink-faint">Ngưỡng tự điền: &gt;= 60%</span>
+                  </div>
+                  <svg
+                    viewBox="0 0 640 200"
+                    className="h-44 w-full rounded-md border border-line bg-slate-900"
+                    role="img"
+                    aria-label="Khung quan sát Camera Ảo CV tại bàn đóng gói"
+                  >
+                    <defs>
+                      <pattern id="pack-grid" width="32" height="32" patternUnits="userSpaceOnUse">
+                        <path d="M 32 0 L 0 0 0 32" fill="none" stroke="rgba(148,163,184,0.14)" strokeWidth="1" />
+                      </pattern>
+                    </defs>
+                    <rect width="640" height="200" fill="url(#pack-grid)" />
+                    <rect x="48" y="28" width="544" height="144" rx="10" fill="rgba(15,23,42,0.72)" stroke="#334155" strokeWidth="1.5" />
+                    {/* Conveyor parcel */}
+                    <rect x="215" y="48" width="210" height="104" rx="8" fill="#1e293b" stroke="#38bdf8" strokeWidth="2" />
+                    <rect x="235" y="66" width="170" height="26" rx="4" fill="#0f172a" />
+                    <text x="320" y="83" textAnchor="middle" fill="#e2e8f0" fontSize="12" fontFamily="monospace">
+                      {selectedOrder ? selectedOrder.packCode : 'PKG-WAITING'}
+                    </text>
+                    <text x="320" y="114" textAnchor="middle" fill="#38bdf8" fontSize="13" fontWeight="700" fontFamily="monospace">
+                      {selectedOrder ? selectedOrder.expectedSku : 'CHỌN ĐƠN ĐỂ QUÉT'}
+                    </text>
+                    <text x="320" y="136" textAnchor="middle" fill="#94a3b8" fontSize="10" fontFamily="sans-serif">
+                      {prediction
+                        ? `AI Score: ${prediction.confidence}% (${prediction.confidence >= 60 ? 'PASS >= 60%' : 'LOW < 60%'})`
+                        : 'Virtual Overhead CV Reticle (1280x720 sim)'}
+                    </text>
+                    {/* Corner scan reticles */}
+                    <path d="M203 62 V40 H225 M437 62 V40 H415 M203 138 V160 H225 M437 138 V160 H415" fill="none" stroke="#22c55e" strokeWidth="2.5" />
+                  </svg>
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-ink-soft">
+                    <StatusLabel tone="success">Barcode / Scanner: AUTHORITATIVE</StatusLabel>
+                    <StatusLabel tone="warning">MobileNet Camera (&gt;= {Math.round(CV_CONFIDENCE_THRESHOLD * 100)}%): ADVISORY</StatusLabel>
+                    <span>{cvNotice}</span>
+                  </div>
+                </div>
+                {modelError ? <EmptyNote>{modelError}</EmptyNote> : null}
                 {prediction ? (
                   <div className="rounded-md border border-line bg-surface p-3 text-[12px]">
                     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -650,11 +742,11 @@ export default function PackPage() {
                     playsInline
                     muted
                     onLoadedData={() => setVideoReady(true)}
-                    className="h-56 w-full object-cover bg-canvas"
+                    className="h-56 w-full bg-canvas object-cover"
                   />
-                  {!model && (
+                  {(modelLoading || !model) && (
                     <div className="absolute inset-0 flex items-center justify-center bg-canvas/80">
-                      <EmptyNote>Đang tải camera và mô hình AI...</EmptyNote>
+                      <EmptyNote>Đang bật camera thật và nạp mô hình MobileNet...</EmptyNote>
                     </div>
                   )}
                 </div>

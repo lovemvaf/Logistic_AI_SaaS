@@ -16,14 +16,17 @@ import type {
 
 export type Tone = 'neutral' | 'success' | 'warning' | 'danger' | 'info';
 
-const ORDER_LABELS: Record<OrderStatus, string> = {
+const ORDER_LABELS: Record<string, string> = {
   NEW: 'Nháp',
+  PENDING: 'Chờ xử lý',
+  IN_QUEUE: 'Chờ đóng gói',
   UNASSIGNED: 'Chờ gán',
   PENDING_PICKUP: 'Chờ lấy hàng',
   PICKING: 'Đang soạn',
   PACKED: 'Đã đóng gói',
   IN_TRANSIT: 'Đang vận chuyển',
   OUT_FOR_DELIVERY: 'Đang phát',
+  PARTIAL_DELIVERED: 'Giao một phần',
   DELIVERED: 'Đã giao',
   FAILED: 'Giao thất bại',
   RETURN_REQUESTED: 'Yêu cầu trả',
@@ -31,14 +34,17 @@ const ORDER_LABELS: Record<OrderStatus, string> = {
   CANCELLED: 'Đã huỷ',
 };
 
-const ORDER_TONES: Record<OrderStatus, Tone> = {
+const ORDER_TONES: Record<string, Tone> = {
   NEW: 'info',
+  PENDING: 'warning',
+  IN_QUEUE: 'info',
   UNASSIGNED: 'warning',
   PENDING_PICKUP: 'warning',
   PICKING: 'info',
   PACKED: 'info',
   IN_TRANSIT: 'info',
   OUT_FOR_DELIVERY: 'info',
+  PARTIAL_DELIVERED: 'warning',
   DELIVERED: 'success',
   FAILED: 'danger',
   RETURN_REQUESTED: 'warning',
@@ -108,8 +114,8 @@ const SERVICE_TONES: Record<ServiceLevel, Tone> = {
   SAME_DAY: 'success',
 };
 
-export const orderStatusLabel = (status: OrderStatus) => ORDER_LABELS[status] ?? status;
-export const orderStatusTone = (status: OrderStatus): Tone => ORDER_TONES[status] ?? 'neutral';
+export const orderStatusLabel = (status: OrderStatus | string) => ORDER_LABELS[String(status)] ?? String(status);
+export const orderStatusTone = (status: OrderStatus | string): Tone => ORDER_TONES[String(status)] ?? 'neutral';
 export const invoiceStatusLabel = (status: CustomerInvoice['status']) =>
   INVOICE_LABELS[status] ?? status;
 export const invoiceStatusTone = (status: CustomerInvoice['status']): Tone =>

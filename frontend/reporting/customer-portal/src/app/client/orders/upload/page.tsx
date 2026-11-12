@@ -212,35 +212,35 @@ export default function ClientOrdersUpload() {
         {rows.length === 0 ? (
           <EmptyNote>Chưa có dữ liệu nào được phân tích ra khỏi file CSV.</EmptyNote>
         ) : (
-          <TableState
-            loading={uploading}
-            empty={false}
-            error={error || undefined}
-            colSpan={5}
-          >
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[720px] border-collapse text-left">
-                <caption className="sr-only">Dữ liệu CSV đã phân tích, sẵn sàng tạo đơn</caption>
-                <thead>
-                  <tr className="border-b border-line">
-                    <th scope="col" className="h-9 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-                      Dòng
-                    </th>
-                    <th scope="col" className="h-9 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-                      Mã tham chiếu
-                    </th>
-                    <th scope="col" className="h-9 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-                      Người nhận
-                    </th>
-                    <th scope="col" className="h-9 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-                      Dịch vụ
-                    </th>
-                    <th scope="col" className="h-9 pl-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-                      Lỗi
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[720px] border-collapse text-left">
+              <caption className="sr-only">Dữ liệu CSV đã phân tích, sẵn sàng tạo đơn</caption>
+              <thead>
+                <tr className="border-b border-line">
+                  <th scope="col" className="h-9 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+                    Dòng
+                  </th>
+                  <th scope="col" className="h-9 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+                    Mã tham chiếu
+                  </th>
+                  <th scope="col" className="h-9 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+                    Người nhận
+                  </th>
+                  <th scope="col" className="h-9 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+                    Dịch vụ
+                  </th>
+                  <th scope="col" className="h-9 pl-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+                    Lỗi
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <TableState
+                  loading={uploading}
+                  empty={false}
+                  error={error || undefined}
+                  colSpan={5}
+                >
                   {rows.map((row, index) => (
                     <tr key={index} className="h-[42px] border-b border-line/80 hover:bg-surface-alt/60">
                       <td className="pr-3 font-mono text-[12px] text-ink">
@@ -260,10 +260,10 @@ export default function ClientOrdersUpload() {
                       </td>
                     </tr>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          </TableState>
+                </TableState>
+              </tbody>
+            </table>
+          </div>
         )}
       </EditorialSection>
 
