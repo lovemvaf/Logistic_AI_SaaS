@@ -233,11 +233,13 @@ export default function PackPage() {
       setOrdersError(null);
       setSessionError(null);
       try {
-        const queue = await data.orders.list(
-          (row: PackOrder) => row.status === 'PENDING' || row.status === 'IN_QUEUE',
-        );
-        const activeSession = await data.sessions.active();
-        const stationList = await data.stations.list();
+        const [queue, activeSession, stationList] = await Promise.all([
+          data.orders.list(
+            (row: PackOrder) => row.status === 'PENDING' || row.status === 'IN_QUEUE',
+          ),
+          data.sessions.active(),
+          data.stations.list(),
+        ]);
 
         if (cancelled) return;
 

@@ -771,9 +771,9 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
   }
 
   // --------------------------------------------------------------------------
-  // 4. Pack Station Web APIs (/inventory/ops/* & /wms/packing-sessions*, /wms/stations, /wms/staff, /wms/debug/reset)
+  // 4. Pack Station Web APIs (/inventory/ops/*, /pack/queue & /wms/packing-sessions*, /wms/stations, /wms/staff, /wms/debug/reset)
   // --------------------------------------------------------------------------
-  if (path === '/inventory/ops/pack-queue' && method === 'GET') {
+  if ((path === '/inventory/ops/pack-queue' || path === '/pack/queue') && method === 'GET') {
     const roleErr = assertInternalRole(ctx);
     if (roleErr) return roleErr;
     const tid = getTenantId(ctx);
@@ -879,14 +879,16 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
         : undefined;
 
     const result = await withTenant(tid, async (tx) => {
-      const wh = await tx.warehouse.findFirst();
-      const ord = await tx.order.findFirst({
-        where: { OR: [{ trackingCode: packCode }, { id: packCode }], deletedAt: null },
-        include: { items: { include: { product: true } } },
-      });
-      const prod = await tx.product.findFirst({
-        where: { OR: [{ sku: scanned }, { barcode: scanned }], deletedAt: null },
-      });
+      const [wh, ord, prod] = await Promise.all([
+        tx.warehouse.findFirst(),
+        tx.order.findFirst({
+          where: { OR: [{ trackingCode: packCode }, { id: packCode }], deletedAt: null },
+          include: { items: { include: { product: true } } },
+        }),
+        tx.product.findFirst({
+          where: { OR: [{ sku: scanned }, { barcode: scanned }], deletedAt: null },
+        }),
+      ]);
       const expectedSku = ord?.items[0]?.product?.sku || 'SKU-DN3PL-IC8542';
       const expectedBarcode = ord?.items[0]?.product?.barcode || '';
       const isMatch =
@@ -929,11 +931,13 @@ export async function handleOrdersWmsPackRoutes(ctx: ApiContext): Promise<ApiRes
     const dimensionCm = String(body?.dimensionCm || '35x25x20');
 
     const sealed = await withTenant(tid, async (tx) => {
-      const wh = await tx.warehouse.findFirst();
-      const ord = await tx.order.findFirst({
-        where: { OR: [{ trackingCode: code }, { id: code }], deletedAt: null },
-        include: { items: { include: { product: true } } },
-      });
+      const [wh, ord] = await Promise.all([
+        tx.warehouse.findFirst(),
+        tx.order.findFirst({
+          where: { OR: [{ trackingCode: code }, { id: code }], deletedAt: null },
+          include: { items: { include: { product: true } } },
+        }),
+      ]);
       const firstItem = ord?.items?.[0];
       const expectedWeightGrams = Math.round(num(firstItem?.product?.weightKg, 1.4) * (firstItem?.quantity || 1) * 1000);
       const deltaPercent = expectedWeightGrams > 0 ? Math.round(((weightGrams - expectedWeightGrams) / expectedWeightGrams) * 100) : 0;

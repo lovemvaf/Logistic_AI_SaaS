@@ -1,8 +1,8 @@
 import {
-  assertSessionTenantActive,
   getTokenFromHeaders,
   verifySessionToken,
 } from './auth';
+import { getPrisma } from './db';
 import { getOrCreateSandbox } from './scenarios';
 import { handleAdminAndIamRoutes } from './handlers/admin-iam';
 import { handleClientAndPublicRoutes } from './handlers/client-public';
@@ -69,6 +69,26 @@ async function parseRequestBody(req: Request): Promise<any> {
   }
 }
 
+function isPublicApiPath(method: string, path: string): boolean {
+  if (method === 'POST') {
+    if (
+      path === '/auth/login' ||
+      /^\/(admin|tenant|client|mobile)\/auth\/(login|forgot-password|reset-password|google)$/.test(path)
+    ) {
+      return true;
+    }
+  }
+  if (method === 'GET') {
+    if (
+      /^\/public\/t\/[^/]+$/.test(path) ||
+      /^\/(?:public\/track|track|orders\/track)\/[^/]+(?:\/(?:live|sla))?$/.test(path)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export async function dispatchDemoApi(
   req: Request,
   portalHint?: PortalId,
@@ -115,17 +135,50 @@ export async function dispatchDemoApi(
     const demoRes = await handleDemoRoutes(ctx);
     if (demoRes) return demoRes;
 
-    // 2. Active-tenant guard on existing sessions
-    if (ctx.session && !path.includes('/auth/')) {
-      const tenantCheck = await assertSessionTenantActive(ctx.session);
-      if (!tenantCheck.ok) {
-        return { status: tenantCheck.status, body: { code: tenantCheck.code, message: tenantCheck.message } };
-      }
+    // 2. Fail-closed Authentication Gate on all non-public domain paths
+    if (!ctx.session && !isPublicApiPath(ctx.method, path)) {
+      return {
+        status: 401,
+        body: {
+          code: 'UNAUTHORIZED',
+          message: 'Phiên đăng nhập không hợp lệ hoặc đã hết hạn.',
+        },
+      };
     }
 
-    // 3. Simulated Network Chaos Injection (from DemoSandbox) — excluded for /public/* read checks if wished, applies to domain APIs
-    if (!path.startsWith('/public/') && !path.includes('/auth/')) {
-      const sbx = await getOrCreateSandbox(sandboxKey).catch(() => null);
+    // 3. Single parallel DB lookup for active-tenant guard + DemoSandbox chaos state (non-RLS platform tables)
+    const needTenantCheck = Boolean(ctx.session?.tenantId && !path.includes('/auth/'));
+    const needSandboxCheck = !path.startsWith('/public/') && !path.includes('/auth/');
+    if (needTenantCheck || needSandboxCheck) {
+      const prisma = getPrisma();
+      const [tenantRow, sbxRow] = await Promise.all([
+        needTenantCheck
+          ? prisma.tenant.findUnique({
+              where: { id: ctx.session!.tenantId! },
+              select: { status: true, name: true, slug: true },
+            })
+          : Promise.resolve(null),
+        needSandboxCheck
+          ? prisma.demoSandbox.findUnique({ where: { sandboxKey } }).catch(() => null)
+          : Promise.resolve(null),
+      ]);
+
+      if (needTenantCheck) {
+        if (!tenantRow) {
+          return { status: 403, body: { code: 'TENANT_NOT_FOUND', message: 'Doanh nghiệp không còn tồn tại.' } };
+        }
+        if (tenantRow.status === 'SUSPENDED' || tenantRow.status === 'INACTIVE') {
+          return {
+            status: 403,
+            body: {
+              code: 'TENANT_SUSPENDED',
+              message: `Doanh nghiệp "${tenantRow.name}" (${tenantRow.slug}) đang bị ${tenantRow.status}. Mọi thao tác bị từ chối.`,
+            },
+          };
+        }
+      }
+
+      const sbx = sbxRow ?? (needSandboxCheck ? await getOrCreateSandbox(sandboxKey).catch(() => null) : null);
       if (sbx?.networkSimMode === 'SLOW_800MS') {
         await new Promise((r) => setTimeout(r, 800));
       } else if (sbx?.networkSimMode === 'RATE_LIMIT_429') {

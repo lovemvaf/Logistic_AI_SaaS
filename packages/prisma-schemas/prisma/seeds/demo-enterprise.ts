@@ -270,7 +270,7 @@ async function resetDemoData(prisma: PrismaClient): Promise<void> {
       await tx.tenant.deleteMany({ where: { id: tenantFilter } });
       await tx.systemAdmin.deleteMany({ where: { email: DEMO_SUPER_ADMIN_EMAIL } });
     },
-    { timeout: 120000, maxWait: 15000 },
+    { timeout: 300000, maxWait: 30000 },
   );
 
   console.log('✅ Demo enterprise reset completed cleanly (existing non-demo / RLS test data preserved).');
@@ -1412,6 +1412,24 @@ async function seedDemoData(prisma: PrismaClient): Promise<void> {
 
         const createdOrderIds: string[] = [];
         const createdOrderCodes: string[] = [];
+        const orderPayload: Array<{
+          id: string;
+          tenantId: string;
+          trackingCode: string;
+          clientId: string;
+          clientOrderRef: string;
+          status: any;
+          recipientName: string;
+          recipientPhone: string;
+          recipientAddress: string;
+          lat: number;
+          lng: number;
+          codAmount: number;
+          shippingFee: number;
+          driverId: string | null;
+          estimatedDeliveryDate: Date;
+          actualDeliveryTime: Date | null;
+        }> = [];
         const orderItemPayload: Array<{ id: string; tenantId: string; orderId: string; productId: string; quantity: number }> = [];
         const trackingEventPayload: Array<{ id: string; tenantId: string; orderId: string; status: string; location: string; description: string; timestamp: Date }> = [];
 
@@ -1434,25 +1452,23 @@ async function seedDemoData(prisma: PrismaClient): Promise<void> {
           const targetClientId = i <= Math.ceil(cfg.orderCount * 0.7) ? clientMain.id : clientSecondary.id;
           const prod = products[(i - 1) % 3];
 
-          await tx.order.create({
-            data: {
-              id: orderId,
-              tenantId: tid,
-              trackingCode,
-              clientId: targetClientId,
-              clientOrderRef: `REF-${cfg.codeSuffix}-${String(i).padStart(4, '0')}`,
-              status: st,
-              recipientName: `Khách nhận #${i} (${cfg.codeSuffix})`,
-              recipientPhone: `098${String(1000000 + i).slice(0, 7)}`,
-              recipientAddress: loc.addr,
-              lat: loc.lat,
-              lng: loc.lng,
-              codAmount: i % 3 === 0 ? 0 : 950000 + i * 15000,
-              shippingFee: 45000 + (i % 5) * 12000,
-              driverId: st === 'IN_TRANSIT' || st === 'DELIVERED' ? driver1.id : null,
-              estimatedDeliveryDate: new Date(Date.now() + 2 * 86400 * 1000),
-              actualDeliveryTime: st === 'DELIVERED' ? new Date('2026-11-10T14:20:00Z') : null,
-            },
+          orderPayload.push({
+            id: orderId,
+            tenantId: tid,
+            trackingCode,
+            clientId: targetClientId,
+            clientOrderRef: `REF-${cfg.codeSuffix}-${String(i).padStart(4, '0')}`,
+            status: st,
+            recipientName: `Khách nhận #${i} (${cfg.codeSuffix})`,
+            recipientPhone: `098${String(1000000 + i).slice(0, 7)}`,
+            recipientAddress: loc.addr,
+            lat: loc.lat,
+            lng: loc.lng,
+            codAmount: i % 3 === 0 ? 0 : 950000 + i * 15000,
+            shippingFee: 45000 + (i % 5) * 12000,
+            driverId: st === 'IN_TRANSIT' || st === 'DELIVERED' ? driver1.id : null,
+            estimatedDeliveryDate: new Date(Date.now() + 2 * 86400 * 1000),
+            actualDeliveryTime: st === 'DELIVERED' ? new Date('2026-11-10T14:20:00Z') : null,
           });
 
           createdOrderIds.push(orderId);
@@ -1476,6 +1492,7 @@ async function seedDemoData(prisma: PrismaClient): Promise<void> {
           });
         }
 
+        await tx.order.createMany({ data: orderPayload });
         await tx.orderItem.createMany({ data: orderItemPayload });
         await tx.orderTrackingEvent.createMany({ data: trackingEventPayload });
 
@@ -2610,7 +2627,7 @@ async function seedDemoData(prisma: PrismaClient): Promise<void> {
         },
       });
     },
-    { timeout: 120000, maxWait: 15000 },
+    { timeout: 300000, maxWait: 30000 },
   );
 
   // Write local gitignored credentials manifesto (NEVER committed)

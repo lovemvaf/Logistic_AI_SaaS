@@ -2,6 +2,7 @@ import { handleNextApiRequest } from 'demo-cloud-api';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const preferredRegion = 'sin1';
 
 export async function GET(req: Request) {
   return handleNextApiRequest(req, 'tenant');

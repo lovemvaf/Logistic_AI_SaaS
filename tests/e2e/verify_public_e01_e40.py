@@ -706,49 +706,63 @@ def run_suite(args: argparse.Namespace) -> int:
             pack_page.goto(f"{pack_url}/login", wait_until="networkidle")
             pack_page.get_by_role("button", name=re.compile("Nhân viên Bàn Đóng Gói")).click()
             pack_page.wait_for_url(re.compile(r"/pack"), timeout=20000)
-            pack_page.wait_for_selector("text=Bộ mô phỏng Camera CV", timeout=15000)
-            pack_page.wait_for_selector("text=Lấy đơn kế tiếp", timeout=15000)
+            pack_page.wait_for_selector("text=Bộ mô phỏng Camera CV", timeout=20000)
+            pack_page.wait_for_selector("text=Lấy đơn kế tiếp", timeout=20000)
 
             def select_pack_order() -> None:
                 order_btn = pack_page.locator("aside button").filter(has_text=re.compile(r"SLG-|PKG-")).first
-                if order_btn.count() > 0:
+                try:
+                    order_btn.wait_for(state="visible", timeout=15000)
                     order_btn.click()
-                else:
+                except Exception:
                     pack_page.get_by_role("button", name="Lấy đơn kế tiếp").click()
-                pack_page.wait_for_timeout(400)
+                    pack_page.wait_for_timeout(1200)
+                pack_page.get_by_role("button", name=re.compile("Quét khớp SKU")).wait_for(state="visible", timeout=10000)
 
             select_pack_order()
 
             # E15: Low confidence CV warning
-            pack_page.get_by_role("button", name=re.compile("Độ tin cậy thấp")).click()
-            pack_page.wait_for_selector("text=Dưới ngưỡng 60%", timeout=10000)
-            tracker.record("E15", True, "Pack Virtual Camera 52% (<60%) blocked auto-fill with human warning")
+            try:
+                pack_page.get_by_role("button", name=re.compile("Độ tin cậy thấp")).click()
+                pack_page.wait_for_selector("text=Dưới ngưỡng 60%", timeout=10000)
+                tracker.record("E15", True, "Pack Virtual Camera 52% (<60%) blocked auto-fill with human warning")
+            except Exception as exc:
+                tracker.record("E15", False, str(exc))
 
             # E16: Barcode mismatch -> Correction Modal -> Submit override
-            pack_page.get_by_role("button", name=re.compile("Camera Ảo: Ảnh chuẩn")).click()
-            pack_page.get_by_role("button", name=re.compile("Giả lập Quét sai SKU")).click()
-            pack_page.wait_for_selector("text=Khác biệt", timeout=10000)
-            pack_page.get_by_role("button", name="Sửa", exact=True).click()
-            pack_page.wait_for_selector("text=Xác nhận thay thế sản phẩm", timeout=10000)
-            reason_box = pack_page.locator('input[placeholder*="Vì sao mã quét không khớp"]')
-            reason_box.fill("Đổi đúng SKU thực tế tại bàn E2E")
-            pack_page.get_by_role("button", name="Xác nhận thay thế", exact=True).click()
-            pack_page.wait_for_timeout(1200)
-            tracker.record("E16", True, "Pack Barcode mismatch triggered Correction Modal & saved override")
+            try:
+                pack_page.get_by_role("button", name=re.compile("Camera Ảo: Ảnh chuẩn")).click()
+                pack_page.wait_for_selector("text=Áp dụng SKU từ Camera Ảo", timeout=15000)
+                pack_page.get_by_role("button", name=re.compile("Giả lập Quét sai SKU")).click()
+                mismatch_badge = pack_page.locator("form").get_by_text("Khác biệt").first
+                mismatch_badge.wait_for(state="visible", timeout=15000)
+                pack_page.get_by_role("button", name="Sửa", exact=True).click()
+                pack_page.wait_for_selector("text=Xác nhận thay thế sản phẩm", timeout=10000)
+                reason_box = pack_page.locator('input[placeholder*="Vì sao mã quét không khớp"]')
+                reason_box.fill("Đổi đúng SKU thực tế tại bàn E2E")
+                pack_page.get_by_role("button", name="Xác nhận thay thế", exact=True).click()
+                pack_page.wait_for_selector("text=Xác nhận thay thế sản phẩm", state="hidden", timeout=15000)
+                tracker.record("E16", True, "Pack Barcode mismatch triggered Correction Modal & saved override")
+            except Exception as exc:
+                tracker.record("E16", False, str(exc))
 
             # E17: Re-select pending order -> Barcode match + Digital Scale deviation (+25% -> normal) + Seal + Packing Slip Modal
-            select_pack_order()
-            pack_page.get_by_role("button", name=re.compile("Quét khớp SKU")).click()
-            pack_page.wait_for_selector("text=Khớp chính xác", timeout=10000)
-            pack_page.get_by_role("button", name=re.compile(r"Lệch \+25%")).click()
-            pack_page.wait_for_selector("text=Vượt dung sai", timeout=10000)
-            pack_page.get_by_role("button", name=re.compile("Cân chuẩn")).click()
-            pack_page.get_by_role("button", name="Đóng kiện", exact=True).click()
-            pack_page.wait_for_selector("text=Xem Phiếu Đóng Gói", timeout=15000)
-            pack_page.get_by_role("button", name=re.compile("Xem Phiếu Đóng Gói")).click()
-            pack_page.wait_for_selector("text=Phiếu Xác Nhận Đóng Gói", timeout=10000)
-            pack_page.screenshot(path=str(shot_dir / "12-pack-station-slip.png"), full_page=True)
-            tracker.record("E17", True, "Pack match + scale tolerance check + seal + Printable Packing Slip verified")
+            try:
+                select_pack_order()
+                pack_page.get_by_role("button", name=re.compile("Quét khớp SKU")).click()
+                pack_page.locator("form").get_by_text("Khớp chính xác").first.wait_for(state="visible", timeout=15000)
+                pack_page.get_by_role("button", name=re.compile(r"Lệch \+25%")).click()
+                pack_page.wait_for_selector("text=Vượt dung sai", timeout=10000)
+                pack_page.get_by_role("button", name=re.compile("Cân chuẩn")).click()
+                pack_page.wait_for_selector("text=Đạt chuẩn", timeout=10000)
+                pack_page.get_by_role("button", name="Đóng kiện", exact=True).click()
+                pack_page.wait_for_selector('button:has-text("Xem Phiếu Đóng Gói")', timeout=15000)
+                pack_page.get_by_role("button", name=re.compile("Xem Phiếu Đóng Gói")).click()
+                pack_page.wait_for_selector("text=Phiếu Xác Nhận Đóng Gói", timeout=10000)
+                pack_page.screenshot(path=str(shot_dir / "12-pack-station-slip.png"), full_page=True)
+                tracker.record("E17", True, "Pack match + scale tolerance check + seal + Printable Packing Slip verified")
+            except Exception as exc:
+                tracker.record("E17", False, str(exc))
         except Exception as exc:
             for k in ("E15", "E16", "E17"):
                 if k not in tracker.results:
