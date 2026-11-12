@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
@@ -32,18 +32,21 @@ function HandoffInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { login } = useAuth();
+  const loginRef = useRef(login);
+  loginRef.current = login;
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const token = searchParams.get('token')?.trim() || '';
-    const nextPath = searchParams.get('next')?.trim() || '/pack';
-    const safeNext = nextPath.startsWith('/') ? nextPath : '/pack';
+  const token = searchParams.get('token')?.trim() || '';
+  const nextPath = searchParams.get('next')?.trim() || '/pack';
+  const safeNext = nextPath.startsWith('/') ? nextPath : '/pack';
 
+  useEffect(() => {
     if (!token) {
       setError('Thiếu token chuyển cổng.');
       return;
     }
 
+    setError(null);
     let cancelled = false;
     void exchangeTokenOnce(token).then(({ ok, data }) => {
       if (cancelled) return;
@@ -57,7 +60,7 @@ function HandoffInner() {
           window.localStorage.setItem('smartlogi_tenant_slug', data.user.tenantSlug);
         }
       }
-      login(data.token, {
+      loginRef.current(data.token, {
         ...(data.user || {}),
         staffId: data.user?.id || '',
         stationId: data.user?.tenantSlug === 'demo-fdi-bh' ? 'PACK-FDI-01' : 'PACK-DN-01',
@@ -68,7 +71,7 @@ function HandoffInner() {
     return () => {
       cancelled = true;
     };
-  }, [searchParams, login, router]);
+  }, [token, safeNext, router]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-canvas p-6">

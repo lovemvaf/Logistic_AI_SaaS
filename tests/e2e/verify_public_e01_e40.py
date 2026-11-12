@@ -291,8 +291,11 @@ def run_suite(args: argparse.Namespace) -> int:
             switch_tenant_btn.click()
             admin_page.wait_for_url(re.compile(r"smartlogi-tenant.*(/dashboard|/demo-handoff)"), timeout=25000)
             admin_page.wait_for_url(re.compile(r"/dashboard"), timeout=25000)
-            admin_page.wait_for_load_state("networkidle")
-            assert "smartlogi-tenant" in admin_page.url
+            admin_page.wait_for_selector("text=Bàn giao ca", timeout=15000)
+            admin_page.wait_for_timeout(1200)
+            assert "smartlogi-tenant" in admin_page.url and "/dashboard" in admin_page.url, (
+                f"Handoff unstable URL: {admin_page.url}"
+            )
 
             # Replay test via API
             st, sa = api_login(client, admin_url, "admin", "super-admin")
@@ -361,14 +364,26 @@ def run_suite(args: argparse.Namespace) -> int:
             tracker.record("E05", False, str(exc))
 
         try:
-            unauth_ord = client.get(f"{tenant_url}/api/v1/orders")
+            with httpx.Client(timeout=30.0, follow_redirects=False) as anon_client:
+                unauth_ord = anon_client.get(f"{tenant_url}/api/v1/orders")
+                unauth_adm = anon_client.get(f"{admin_url}/api/v1/admin/tenants")
+                unauth_cli = anon_client.get(f"{customer_url}/api/v1/client/orders")
+                unauth_pack = anon_client.get(f"{pack_url}/api/v1/pack/queue")
             _, cli_data = api_login(client, customer_url, "customer", "dn3pl-client")
             cli_headers = {"authorization": f"Bearer {cli_data['token']}", "x-smartlogi-portal": "customer"}
             cli_adm = client.get(f"{admin_url}/api/v1/admin/tenants", headers=cli_headers)
             cli_inv = client.get(f"{tenant_url}/api/v1/inventory", headers=cli_headers)
-            assert unauth_ord.status_code == 401
+            assert (
+                unauth_ord.status_code == 401
+                and unauth_adm.status_code == 401
+                and unauth_cli.status_code == 401
+                and unauth_pack.status_code == 401
+            ), (
+                f"Expected all 4 portals unauth=401, got ord={unauth_ord.status_code}, "
+                f"adm={unauth_adm.status_code}, cli={unauth_cli.status_code}, pack={unauth_pack.status_code}"
+            )
             assert cli_adm.status_code == 403 and cli_inv.status_code == 403
-            tracker.record("E06", True, "Fail-closed RBAC: unauth=401, CUSTOMER_CLIENT admin/inventory=403")
+            tracker.record("E06", True, "Fail-closed RBAC: 4/4 portals unauth=401, CUSTOMER_CLIENT admin/inventory=403")
         except Exception as exc:
             tracker.record("E06", False, str(exc))
 

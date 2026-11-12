@@ -1489,13 +1489,18 @@ export async function handleLogisticsFreightTradeGeoRoutes(ctx: ApiContext): Pro
     const rows = await withTenant(tid, async (tx) =>
       tx.trip.findMany({
         include: { vehicle: true, driver: { include: { user: true } }, deliveries: { include: { order: true } } },
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ createdAt: 'desc' }, { tripCode: 'asc' }],
       }),
     );
+    const ordered = [...rows].sort((a, b) => {
+      const aHasDel = a.deliveries.length > 0 ? 1 : 0;
+      const bHasDel = b.deliveries.length > 0 ? 1 : 0;
+      return bHasDel - aHasDel;
+    });
     return {
       status: 200,
       body: {
-        data: rows.map((t) => ({
+        data: ordered.map((t) => ({
           ...t,
           code: t.tripCode,
           driverName: t.driver?.user?.fullName,

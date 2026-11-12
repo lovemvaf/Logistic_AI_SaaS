@@ -24,7 +24,7 @@ export function Header() {
             Track order
           </Link>
           <Link
-            href="/client"
+            href="/client/dashboard"
             className="text-[12px] font-medium text-ink-soft transition-colors hover:text-ink"
           >
             B2B portal

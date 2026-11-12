@@ -367,8 +367,13 @@ export function DemoControlCenter({
 
     setBusyKey(`switch-${target}`);
     setFeedback(null);
+    const hasSession = Boolean(
+      me?.authenticated ||
+        (typeof window !== 'undefined' &&
+          window.localStorage.getItem(PORTAL_STORAGE_KEYS[portal].token)),
+    );
     try {
-      if (me?.authenticated) {
+      if (hasSession) {
         const res = await apiCall<{ handoffUrl?: string; message?: string; code?: string }>(
           '/demo/handoff',
           {
@@ -436,12 +441,15 @@ export function DemoControlCenter({
       if (p.portal === portal) {
         if (typeof window !== 'undefined') {
           window.localStorage.setItem(PORTAL_STORAGE_KEYS[portal].token, token);
-          window.localStorage.setItem(
-            PORTAL_STORAGE_KEYS[portal].user,
-            JSON.stringify(user || { email: p.email, role: p.role, tenantSlug: p.tenantSlug }),
-          );
+          const storedUser = {
+            ...(user || { email: p.email, role: p.role, tenantSlug: p.tenantSlug }),
+            ...(p.tenantSlug && p.tenantSlug !== 'platform' ? { slug: p.tenantSlug } : {}),
+          };
+          window.localStorage.setItem(PORTAL_STORAGE_KEYS[portal].user, JSON.stringify(storedUser));
           if (p.tenantSlug && p.tenantSlug !== 'platform') {
             window.localStorage.setItem('smartlogi_tenant_slug', p.tenantSlug);
+          } else {
+            window.localStorage.removeItem('smartlogi_tenant_slug');
           }
           window.location.href = p.defaultPath;
         }
@@ -495,14 +503,7 @@ export function DemoControlCenter({
       });
       await refreshState(true);
       if (navigateAfter && typeof window !== 'undefined') {
-        if (s.targetPortal === portal) {
-          window.location.href = s.targetPath;
-        } else if (me?.authenticated) {
-          await handlePortalSwitch(s.targetPortal, s.targetPath);
-        } else {
-          const base = resolvePortalBase(s.targetPortal, me?.portalUrls);
-          window.location.href = `${base}${PORTAL_STORAGE_KEYS[s.targetPortal].loginPath}`;
-        }
+        await handlePortalSwitch(s.targetPortal, s.targetPath);
       }
     } finally {
       setBusyKey(null);

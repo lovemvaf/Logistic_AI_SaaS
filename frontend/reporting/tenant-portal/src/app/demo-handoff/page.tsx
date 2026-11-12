@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
@@ -32,18 +32,21 @@ function HandoffInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { setAuthToken } = useAuth();
+  const setAuthTokenRef = useRef(setAuthToken);
+  setAuthTokenRef.current = setAuthToken;
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const token = searchParams.get('token')?.trim() || '';
-    const nextPath = searchParams.get('next')?.trim() || '/dashboard';
-    const safeNext = nextPath.startsWith('/') ? nextPath : '/dashboard';
+  const token = searchParams.get('token')?.trim() || '';
+  const nextPath = searchParams.get('next')?.trim() || '/dashboard';
+  const safeNext = nextPath.startsWith('/') ? nextPath : '/dashboard';
 
+  useEffect(() => {
     if (!token) {
       setError('Thiếu token chuyển cổng.');
       return;
     }
 
+    setError(null);
     let cancelled = false;
     void exchangeTokenOnce(token).then(({ ok, data }) => {
       if (cancelled) return;
@@ -53,18 +56,20 @@ function HandoffInner() {
       }
       if (typeof window !== 'undefined') {
         if (data.sandboxKey) window.localStorage.setItem('smartlogi_sandbox_key', data.sandboxKey);
-        if (data.user?.tenantSlug) {
+        if (data.user?.tenantSlug && data.user.tenantSlug !== 'platform') {
           window.localStorage.setItem('smartlogi_tenant_slug', data.user.tenantSlug);
+        } else if (data.user?.tenantSlug === 'platform') {
+          window.localStorage.removeItem('smartlogi_tenant_slug');
         }
       }
-      setAuthToken(data.token, data.user);
+      setAuthTokenRef.current(data.token, data.user);
       router.replace(safeNext);
     });
 
     return () => {
       cancelled = true;
     };
-  }, [searchParams, setAuthToken, router]);
+  }, [token, safeNext, router]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-canvas p-6">

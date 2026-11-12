@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
@@ -32,18 +32,21 @@ function HandoffInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { login } = useAuth();
+  const loginRef = useRef(login);
+  loginRef.current = login;
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const token = searchParams.get('token')?.trim() || '';
-    const nextPath = searchParams.get('next')?.trim() || '/admin/dashboard';
-    const safeNext = nextPath.startsWith('/') ? nextPath : '/admin/dashboard';
+  const token = searchParams.get('token')?.trim() || '';
+  const nextPath = searchParams.get('next')?.trim() || '/admin/dashboard';
+  const safeNext = nextPath.startsWith('/') ? nextPath : '/admin/dashboard';
 
+  useEffect(() => {
     if (!token) {
       setError('Thiếu mã chuyển cổng (token).');
       return;
     }
 
+    setError(null);
     let cancelled = false;
     void exchangeTokenOnce(token).then(({ ok, data }) => {
       if (cancelled) return;
@@ -54,14 +57,14 @@ function HandoffInner() {
       if (data.sandboxKey && typeof window !== 'undefined') {
         window.localStorage.setItem('smartlogi_sandbox_key', data.sandboxKey);
       }
-      login(data.token, data.user);
+      loginRef.current(data.token, data.user);
       router.replace(safeNext);
     });
 
     return () => {
       cancelled = true;
     };
-  }, [searchParams, login, router]);
+  }, [token, safeNext, router]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-canvas p-6">

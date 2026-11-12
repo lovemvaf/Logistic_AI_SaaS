@@ -33,8 +33,9 @@ export const getToken = (): string | null => {
 export const setUserRecord = (user: Record<string, any>) => {
   if (typeof window === 'undefined') return;
   window.localStorage.setItem('smartlogi_customer_user', JSON.stringify(user));
-  if (user.tenantSlug || user.slug) {
-    window.localStorage.setItem('smartlogi_tenant_slug', user.tenantSlug || user.slug);
+  const resolvedSlug = user.tenantSlug || user.slug;
+  if (resolvedSlug && resolvedSlug !== 'platform') {
+    window.localStorage.setItem('smartlogi_tenant_slug', resolvedSlug);
   }
 };
 
@@ -52,7 +53,7 @@ export const setToken = (token: string, overrideUser?: Record<string, any>) => {
     readOnlyGuest: Boolean(overrideUser?.readOnlyGuest ?? payload.readOnlyGuest),
   };
   window.localStorage.setItem('smartlogi_customer_user', JSON.stringify(user));
-  if (user.slug) {
+  if (user.slug && user.slug !== 'platform') {
     window.localStorage.setItem('smartlogi_tenant_slug', user.slug);
   }
 };

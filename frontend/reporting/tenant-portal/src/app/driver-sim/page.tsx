@@ -94,11 +94,15 @@ export default function DriverSimulatorPage() {
 
       if (tripList.length > 0 && !initializedTripRef.current) {
         initializedTripRef.current = true;
-        setSelectedTripId(tripList[0].id);
-        const firstDel = tripList[0].deliveries?.[0];
-        if (firstDel) {
-          setSelectedDeliveryId(firstDel.id);
-          setCodInput(String(firstDel.codAmountExpected || 0));
+        const preferredTrip =
+          tripList.find((t) => (t.deliveries?.length || 0) > 0) || tripList[0];
+        setSelectedTripId(preferredTrip.id);
+        const preferredDel =
+          preferredTrip.deliveries?.find((d) => d.status !== 'DELIVERED') ||
+          preferredTrip.deliveries?.[0];
+        if (preferredDel) {
+          setSelectedDeliveryId(preferredDel.id);
+          setCodInput(String(preferredDel.codAmountExpected || 0));
         }
       }
     } catch (err: any) {
@@ -448,6 +452,32 @@ export default function DriverSimulatorPage() {
 
               <div className="space-y-3 text-[12px]">
                 <div className="rounded-md border border-line bg-surface-alt p-3">
+                  <label className="mb-2 block">
+                    <span className="text-[11px] font-medium text-ink-soft">
+                      Chọn chuyến vận tải (Trip)
+                    </span>
+                    <select
+                      aria-label="Chọn chuyến vận tải"
+                      value={currentTrip?.id || ''}
+                      onChange={(e) => {
+                        const nextId = e.target.value;
+                        setSelectedTripId(nextId);
+                        const nextTrip = trips.find((t) => t.id === nextId);
+                        const nextDel =
+                          nextTrip?.deliveries?.find((d) => d.status !== 'DELIVERED') ||
+                          nextTrip?.deliveries?.[0];
+                        setSelectedDeliveryId(nextDel?.id || '');
+                        setCodInput(String(nextDel?.codAmountExpected || 0));
+                      }}
+                      className="mt-1 h-8 w-full rounded border border-line bg-surface px-2 text-[12px] text-ink"
+                    >
+                      {trips.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.tripCode} ({t.status}) — {t.deliveries?.length || 0} điểm giao
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                   <p className="font-semibold text-ink">
                     Chuyến hiện tại: {currentTrip?.tripCode || 'Chưa có'} ({currentTrip?.vehiclePlate || '60C'})
                   </p>
@@ -534,6 +564,11 @@ export default function DriverSimulatorPage() {
                     </option>
                   ))}
                 </select>
+                {(currentTrip?.deliveries || []).length === 0 ? (
+                  <span className="mt-1 block text-[11px] text-amber-700">
+                    Chuyến này chưa có điểm giao nào. Hãy chọn chuyến có điểm giao trong mục Chọn chuyến vận tải.
+                  </span>
+                ) : null}
               </label>
 
               <div className="grid gap-2 sm:grid-cols-2">

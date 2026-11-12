@@ -1493,6 +1493,7 @@ async function seedDemoData(prisma: PrismaClient): Promise<void> {
             estimatedDistanceKm: 44.5,
             aiOptimized: true,
             departureTime: new Date('2026-11-11T05:30:00Z'),
+            createdAt: new Date('2026-11-11T05:30:00Z'),
           },
         });
         const tripDraft = await tx.trip.create({
@@ -1506,6 +1507,7 @@ async function seedDemoData(prisma: PrismaClient): Promise<void> {
             totalWeightKg: 2100,
             totalVolumeCbm: 8.5,
             estimatedDistanceKm: 28.0,
+            createdAt: new Date('2026-11-11T05:00:00Z'),
           },
         });
 

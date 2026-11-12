@@ -36,9 +36,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           credentials: "include",
           headers: { "x-smartlogi-portal": "pack" },
         });
-        if (active && res.ok) {
+        if (active && !getToken() && res.ok) {
           const data = await res.json();
-          if (data?.authenticated && data?.user) {
+          if (active && !getToken() && data?.authenticated && data?.user) {
             setUser(data.user);
             setUserState(data.user);
           }

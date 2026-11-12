@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { getToken, setToken, setUserRecord, clearToken, getUser } from './auth';
 
 interface AuthContextType {
@@ -43,9 +43,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           credentials: 'include',
           headers: { 'x-smartlogi-portal': 'admin' },
         });
-        if (active && res.ok) {
+        if (active && !getToken() && res.ok) {
           const data = await res.json();
-          if (data?.authenticated && data?.user) {
+          if (active && !getToken() && data?.authenticated && data?.user) {
             setUserRecord(data.user);
             setUser(data.user);
           }
@@ -63,16 +63,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     };
   }, []);
 
-  const login = (newToken: string, customUser?: Record<string, any>) => {
+  const login = useCallback((newToken: string, customUser?: Record<string, any>) => {
     setToken(newToken, customUser);
     setTokenState(newToken);
     const storedUser = getUser();
     if (storedUser) {
       setUser(storedUser);
     }
-  };
+  }, []);
 
-  const logout = () => {
+  const logout = useCallback(() => {
     clearToken();
     setTokenState(null);
     setUser(null);
@@ -83,12 +83,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         headers: { 'x-smartlogi-portal': 'admin' },
       }).catch(() => undefined);
     }
-  };
+  }, []);
+
+  const isAuthenticated = Boolean(token || user);
+  const value = useMemo(
+    () => ({ token, user, isAuthenticated, login, logout, isLoading }),
+    [token, user, isAuthenticated, login, logout, isLoading],
+  );
 
   return (
-    <AuthContext.Provider
-      value={{ token, user, isAuthenticated: Boolean(token || user), login, logout, isLoading }}
-    >
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );

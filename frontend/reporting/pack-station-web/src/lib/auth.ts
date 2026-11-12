@@ -46,8 +46,9 @@ export const getUser = (): any | null => {
 export const setUser = (user: any) => {
   if (!isBrowser()) return;
   window.localStorage.setItem(USER_KEY, JSON.stringify(user));
-  if (user?.slug || user?.tenantSlug) {
-    window.localStorage.setItem("smartlogi_tenant_slug", user.slug || user.tenantSlug);
+  const resolvedSlug = user?.slug || user?.tenantSlug;
+  if (resolvedSlug && resolvedSlug !== "platform") {
+    window.localStorage.setItem("smartlogi_tenant_slug", resolvedSlug);
   }
 };
 

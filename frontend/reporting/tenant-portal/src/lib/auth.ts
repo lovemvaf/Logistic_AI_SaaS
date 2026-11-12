@@ -51,8 +51,9 @@ export const getUser = () => {
 export const setUserRecord = (user: Record<string, any>) => {
   if (!isBrowser()) return;
   window.localStorage.setItem(USER_KEY, JSON.stringify(user));
-  if (user.tenantSlug || user.slug) {
-    window.localStorage.setItem("smartlogi_tenant_slug", user.tenantSlug || user.slug);
+  const resolvedSlug = user.tenantSlug || user.slug;
+  if (resolvedSlug && resolvedSlug !== "platform") {
+    window.localStorage.setItem("smartlogi_tenant_slug", resolvedSlug);
   }
 };
 
@@ -70,8 +71,10 @@ export const setSession = (token: string, overrideUser?: Record<string, any>) =>
   };
   window.localStorage.setItem(TOKEN_KEY, token);
   window.localStorage.setItem(USER_KEY, JSON.stringify(user));
-  if (user.slug) {
+  if (user.slug && user.slug !== "platform") {
     window.localStorage.setItem("smartlogi_tenant_slug", user.slug);
+  } else if (user.slug === "platform") {
+    window.localStorage.removeItem("smartlogi_tenant_slug");
   }
 };
 
